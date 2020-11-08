@@ -26,7 +26,13 @@ class image_converter:
     
     # save the position of the red and green joints to use them if they cannot be found
     self.red_pos = np.array([0, 0])
+    self.red_momentum = np.array([0, 0])
     self.green_pos = np.array([0, 0])
+    self.green_momentum = np.array([0, 0])
+    self.blue_pos = np.array([0, 0])
+    self.blue_momentum = np.array([0, 0])
+    self.yellow_pos = np.array([0, 0])
+    self.yellow_momentum = np.array([0, 0])
 
   def detect_red(self,image):
       redMask = cv2.inRange(self.img2HSV, (0, 100, 100), (10, 255, 255))
@@ -36,16 +42,18 @@ class image_converter:
       M = cv2.moments(thresh)
       if M["m00"] != 0:
         cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
-        self.red_pos = [cX, cY]
+        cZ = int(M["m01"] / M["m00"])
+        self.red_momentum = np.subtract([cX, cZ], self.red_pos)
+        self.red_pos = [cX, cZ]
       else:
-        cX, cY = self.red_pos
+        cX, cZ = np.add(self.red_pos, self.red_momentum)
+        self.red_pos = [cX, cZ]
       
-      cv2.circle(self.cv_image2, (cX, cY), 2, (255, 255, 255), -1)
+      cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
       """
-      cv2.putText(self.cv_image2, "Red Center", (cX - 25, cY - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+      cv2.putText(self.cv_image2, "Red Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
       """
-      return np.array([cX, cY])
+      return np.array([cX, cZ])
 
   def detect_green(self,image):
       greenMask = cv2.inRange(self.img2HSV, (50, 100, 100), (70, 255, 255))
@@ -55,17 +63,19 @@ class image_converter:
       M = cv2.moments(thresh)
       if M["m00"] != 0:
         cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
-        self.green_pos = [cX, cY]
+        cZ = int(M["m01"] / M["m00"])
+        self.green_momentum = np.subtract([cX, cZ], self.green_pos)
+        self.green_pos = [cX, cZ]
       else:
-        cX, cY = self.green_pos
+        cX, cZ = np.add(self.green_pos, self.green_momentum)
+        self.green_pos = [cX, cZ]
       
-      cv2.circle(self.cv_image2, (cX, cY), 2, (255, 255, 255), -1)
+      cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
       """
-      cv2.putText(self.cv_image2, "Green Center", (cX - 25, cY - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+      cv2.putText(self.cv_image2, "Green Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
       """
       
-      return np.array([cX, cY])
+      return np.array([cX, cZ])
 
   def detect_blue(self,image):
       blueMask = cv2.inRange(self.img2HSV, (110, 100, 100), (130, 255, 255))
@@ -75,16 +85,19 @@ class image_converter:
       M = cv2.moments(thresh)
       if M["m00"] != 0:
         cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
+        cZ = int(M["m01"] / M["m00"])
+        self.blue_momentum = np.subtract([cX, cZ], self.blue_pos)
+        self.blue_pos = [cX, cZ]
       else:
-        cX, cY = 0, 0
+        cX, cZ = np.add(self.blue_pos, self.blue_momentum)
+        self.blue_pos = [cX, cZ]
       
-      cv2.circle(self.cv_image2, (cX, cY), 2, (255, 255, 255), -1)
+      cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
       """
-      cv2.putText(self.cv_image2, "Blue Center", (cX - 25, cY - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+      cv2.putText(self.cv_image2, "Blue Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
       """
       
-      return np.array([cX, cY])
+      return np.array([cX, cZ])
 
   def detect_yellow(self,image):
       yellowMask = cv2.inRange(self.img2HSV, (20, 100, 100), (40, 255, 255))
@@ -94,16 +107,19 @@ class image_converter:
       M = cv2.moments(thresh)
       if M["m00"] != 0:
         cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
+        cZ = int(M["m01"] / M["m00"])
+        self.yellow_momentum = np.subtract([cX, cZ], self.yellow_pos)
+        self.yellow_pos = [cX, cZ]
       else:
-        cX, cY = 0, 0
+        cX, cZ = np.add(self.yellow_pos, self.yellow_momentum)
+        self.yellow_pos = [cX, cZ]
       
-      cv2.circle(self.cv_image2, (cX, cY), 2, (255, 255, 255), -1)
+      cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
       """
-      cv2.putText(self.cv_image2, "Yellow Center", (cX - 25, cY - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+      cv2.putText(self.cv_image2, "Yellow Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
       """
       
-      return np.array([cX, cY])
+      return np.array([cX, cZ])
 
   # Recieve data, process it, and publish
   def callback2(self,data):
