@@ -19,10 +19,16 @@ class image_converter:
     rospy.init_node('image_processing', anonymous=True)
     # initialize a publisher to send images from camera1 to a topic named image_topic1
     self.image_pub1 = rospy.Publisher("image_topic1",Image, queue_size = 1)
+    # initialize a publisher to send joints' angular position to the robot
+    self.robot_joint1_pub = rospy.Publisher("/robot/joint1_position_controller/command", Float64, queue_size=10)
+    self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
+    self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
     # initialize a subscriber to recieve messages from a topic named /robot/camera1/image_raw and use callback function to recieve data
     self.image_sub1 = rospy.Subscriber("/camera1/robot/image_raw",Image,self.callback1)
     # initialize the bridge between openCV and ROS
     self.bridge = CvBridge()
+    
+    self.time = rospy.get_time()
 
 
   # Recieve data from camera 1, process it, and publish
@@ -35,12 +41,28 @@ class image_converter:
     
     # Uncomment if you want to save the image
     #cv2.imwrite('image_copy.png', cv_image)
-
     im1=cv2.imshow('window1', self.cv_image1)
     cv2.waitKey(1)
+    
+    #cur_time = rospy.get_time()
+    #dt = cur_time - self.time_previous_step2
+    
+    t = rospy.get_time()
+    
+    #
+    self.joint1 =Float64()
+    self.joint1.data = np.pi/2*np.sin((np.pi/15)*t)
+    self.joint2 =Float64()
+    self.joint2.data = np.pi/2*np.sin((np.pi/18)*t)
+    self.joint3 =Float64()
+    self.joint3.data = np.pi/2*np.sin((np.pi/20)*t)
+    
     # Publish the results
     try: 
       self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
+      self.robot_joint1_pub.publish(self.joint1)
+      self.robot_joint2_pub.publish(self.joint2)
+      self.robot_joint3_pub.publish(self.joint3)
     except CvBridgeError as e:
       print(e)
 
