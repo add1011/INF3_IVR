@@ -30,84 +30,14 @@ class image_converter:
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
-        # save the position of the red and green joints to use them if they cannot be found
-        self.red_pos = np.array([0, 0])
-        self.red_momentum = np.array([0, 0])
-        self.green_pos = np.array([0, 0])
-        self.green_momentum = np.array([0, 0])
-        self.blue_pos = np.array([0, 0])
-        self.blue_momentum = np.array([0, 0])
-        self.yellow_pos = np.array([0, 0])
-        self.yellow_momentum = np.array([0, 0])
-
         # third column is to store if this node is currently guessing the position of the joint
         self.joint_centres = np.zeros((4, 3), dtype='float64')
 
-    def detect_yellow(self, image):
-        yellowMask = cv2.inRange(self.img1HSV, (20, 100, 100), (40, 255, 255))
-        yellowImg = cv2.bitwise_and(self.cv_image1, self.cv_image1, mask=yellowMask)
-        yellowImg_grey = cv2.cvtColor(yellowImg, cv2.COLOR_BGR2GRAY)
-        ret, thresh = cv2.threshold(yellowImg_grey, 1, 255, 0)
-        M = cv2.moments(thresh)
-        if M["m00"] != 0:
-            cY = int(M["m10"] / M["m00"])
-            cZ = int(M["m01"] / M["m00"])
-            self.yellow_momentum = np.subtract([cY, cZ], self.yellow_pos)
-            self.yellow_pos = [cY, cZ]
-            self.joint_centres[0] = [cY, cZ, 0]
-        else:
-            cY, cZ = np.add(self.yellow_pos, self.yellow_momentum)
-            self.yellow_pos = [cY, cZ]
-            self.joint_centres[0] = [cY, cZ, 1]
+        # save the momentum of each joint to help estimate position when they cannot be seen
+        self.joint_momentums = np.zeros((4, 2), dtype='float64')
 
-        cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        # cv2.putText(self.cv_image1, "Yellow Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        return np.array([cY, cZ])
-
-    def detect_blue(self, image):
-        blueMask = cv2.inRange(self.img1HSV, (110, 100, 100), (130, 255, 255))
-        blueImg = cv2.bitwise_and(self.cv_image1, self.cv_image1, mask=blueMask)
-        blueImg_grey = cv2.cvtColor(blueImg, cv2.COLOR_BGR2GRAY)
-        ret, thresh = cv2.threshold(blueImg_grey, 1, 255, 0)
-        M = cv2.moments(thresh)
-        if M["m00"] != 0:
-            cY = int(M["m10"] / M["m00"])
-            cZ = int(M["m01"] / M["m00"])
-            self.blue_momentum = np.subtract([cY, cZ], self.blue_pos)
-            self.blue_pos = [cY, cZ]
-            self.joint_centres[1] = [cY, cZ, 0]
-        else:
-            cY, cZ = np.add(self.blue_pos, self.blue_momentum)
-            self.blue_pos = [cY, cZ]
-            self.joint_centres[1] = [cY, cZ, 1]
-
-        cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        # cv2.putText(self.cv_image1, "Blue Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        return np.array([cY, cZ])
-
-    def detect_green(self, image):
-        greenMask = cv2.inRange(self.img1HSV, (50, 100, 100), (70, 255, 255))
-        greenImg = cv2.bitwise_and(self.cv_image1, self.cv_image1, mask=greenMask)
-        greenImg_grey = cv2.cvtColor(greenImg, cv2.COLOR_BGR2GRAY)
-        ret, thresh = cv2.threshold(greenImg_grey, 1, 255, 0)
-        M = cv2.moments(thresh)
-        if M["m00"] != 0:
-            cY = int(M["m10"] / M["m00"])
-            cZ = int(M["m01"] / M["m00"])
-            self.green_momentum = np.subtract([cY, cZ], self.green_pos)
-            self.green_pos = [cY, cZ]
-            self.joint_centres[2] = [cY, cZ, 0]
-        else:
-            cY, cZ = np.add(self.green_pos, self.green_momentum)
-            self.green_pos = [cY, cZ]
-            self.joint_centres[2] = [cY, cZ, 1]
-
-        cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        # cv2.putText(self.cv_image1, "Green Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        return np.array([cY, cZ])
-
-    def detect_red(self, image):
-        redMask = cv2.inRange(self.img1HSV, (0, 100, 100), (10, 255, 255))
+    def detectColour(self, hueFloor, hueCeiling, jointIndex):
+        redMask = cv2.inRange(self.img1HSV, (hueFloor, 100, 100), (hueCeiling, 255, 255))
         redImg = cv2.bitwise_and(self.cv_image1, self.cv_image1, mask=redMask)
         redImg_grey = cv2.cvtColor(redImg, cv2.COLOR_BGR2GRAY)
         ret, thresh = cv2.threshold(redImg_grey, 1, 255, 0)
@@ -115,16 +45,14 @@ class image_converter:
         if M["m00"] != 0:
             cY = int(M["m10"] / M["m00"])
             cZ = int(M["m01"] / M["m00"])
-            self.red_momentum = np.subtract([cY, cZ], self.red_pos)
-            self.red_pos = [cY, cZ]
-            self.joint_centres[3] = [cY, cZ, 0]
+            self.joint_momentums[jointIndex] = np.subtract([cY, cZ], self.joint_centres[jointIndex, :2])
+            self.joint_centres[jointIndex] = [cY, cZ, 0]
         else:
-            cY, cZ = np.add(self.red_pos, self.red_momentum)
-            self.red_pos = [cY, cZ]
-            self.joint_centres[3] = [cY, cZ, 1]
+            # cY, cZ = np.add(self.joint_centres[jointIndex, :2], self.joint_momentums[jointIndex])
+            cY, cZ = self.joint_centres[jointIndex, :2]
+            self.joint_centres[jointIndex] = [cY, cZ, 1]
 
-        cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        # cv2.putText(self.cv_image1, "Red Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        cv2.circle(self.cv_image1, (int(cY), int(cZ)), 2, (255, 255, 255), -1)
         return np.array([cY, cZ])
 
     # Recieve data from camera 1, process it, and publish
@@ -137,10 +65,10 @@ class image_converter:
 
         self.img1HSV = cv2.cvtColor(self.cv_image1, cv2.COLOR_BGR2HSV)
 
-        self.detect_red(self.cv_image1)
-        self.detect_green(self.cv_image1)
-        self.detect_blue(self.cv_image1)
-        self.detect_yellow(self.cv_image1)
+        self.detectColour(20, 40, 0)
+        self.detectColour(110, 130, 1)
+        self.detectColour(50, 70, 2)
+        self.detectColour(0, 10, 3)
 
         self.js = Float64MultiArray()
         self.js.data = self.joint_centres.flatten()
