@@ -61,10 +61,7 @@ class image_converter:
             self.joint_centres[0] = [cY, cZ, 1]
 
         cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        """
-      cv2.putText(self.cv_image1, "Yellow Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-      """
-
+        # cv2.putText(self.cv_image1, "Yellow Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cY, cZ])
 
     def detect_blue(self, image):
@@ -85,10 +82,7 @@ class image_converter:
             self.joint_centres[1] = [cY, cZ, 1]
 
         cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        """
-      cv2.putText(self.cv_image1, "Blue Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-      """
-
+        # cv2.putText(self.cv_image1, "Blue Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cY, cZ])
 
     def detect_green(self, image):
@@ -109,9 +103,7 @@ class image_converter:
             self.joint_centres[2] = [cY, cZ, 1]
 
         cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        """
-      cv2.putText(self.cv_image1, "Green Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-      """
+        # cv2.putText(self.cv_image1, "Green Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cY, cZ])
 
     def detect_red(self, image):
@@ -132,18 +124,8 @@ class image_converter:
             self.joint_centres[3] = [cY, cZ, 1]
 
         cv2.circle(self.cv_image1, (cY, cZ), 2, (255, 255, 255), -1)
-        """
-      cv2.putText(self.cv_image1, "Red Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-      """
+        # cv2.putText(self.cv_image1, "Red Center", (cY - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cY, cZ])
-
-    def pixel2meter(self, image):
-        # Obtain the centre of each coloured blob
-        circle2Pos = self.detect_blue(image)
-        circle3Pos = self.detect_green(image)
-        # find the distance between two circles
-        dist = np.sum((circle2Pos - circle3Pos) ** 2)
-        return 3.5 / np.sqrt(dist)
 
     # Recieve data from camera 1, process it, and publish
     def callback1(self, data):

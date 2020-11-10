@@ -57,9 +57,7 @@ class image_converter:
             self.joint_centres[0] = [cX, cZ, 1]
 
         cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
-        """
-        cv2.putText(self.cv_image2, "Yellow Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        """
+        # cv2.putText(self.cv_image2, "Yellow Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cX, cZ])
 
     def detect_blue(self, image):
@@ -80,10 +78,7 @@ class image_converter:
             self.joint_centres[1] = [cX, cZ, 1]
 
         cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
-        """
-         cv2.putText(self.cv_image2, "Blue Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-         """
-
+        # cv2.putText(self.cv_image2, "Blue Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cX, cZ])
 
     def detect_green(self, image):
@@ -104,10 +99,7 @@ class image_converter:
             self.joint_centres[2] = [cX, cZ, 1]
 
         cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
-        """
-         cv2.putText(self.cv_image2, "Green Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        """
-
+        # cv2.putText(self.cv_image2, "Green Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cX, cZ])
 
     def detect_red(self, image):
@@ -128,9 +120,7 @@ class image_converter:
             self.joint_centres[3] = [cX, cZ, 1]
 
         cv2.circle(self.cv_image2, (cX, cZ), 2, (255, 255, 255), -1)
-        """
-        cv2.putText(self.cv_image2, "Red Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        """
+        # cv2.putText(self.cv_image2, "Red Center", (cX - 25, cZ - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         return np.array([cX, cZ])
 
     # Recieve data, process it, and publish
