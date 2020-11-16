@@ -33,14 +33,19 @@ class image_converter:
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
-        greenMask = cv2.inRange(self.img2HSV, (hueFloor, 100, 100), (hueCeiling, 255, 255))
-        greenImg = cv2.bitwise_and(self.cv_image2, self.cv_image2, mask=greenMask)
-        greenImg_grey = cv2.cvtColor(greenImg, cv2.COLOR_BGR2GRAY)
-        ret, thresh = cv2.threshold(greenImg_grey, 1, 255, 0)
-        M = cv2.moments(thresh)
-        if M["m00"] != 0:
-            cX = int(M["m10"] / M["m00"])
-            cZ = int(M["m01"] / M["m00"])
+        colourMask = cv2.inRange(self.img2HSV, (hueFloor, 100, 100), (hueCeiling, 255, 255))
+        colourImg = cv2.bitwise_and(self.cv_image2, self.cv_image2, mask=colourMask)
+        img_grey = cv2.cvtColor(colourImg, cv2.COLOR_BGR2GRAY)
+        ret, thresh = cv2.threshold(img_grey, 1, 255, 0)
+        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        cv2.drawContours(self.cv_image2, contours, -1, (0, 255, 0), 3)
+        cv2.waitKey(1)
+        #M = cv2.moments(thresh)
+        #if M["m00"] != 0:
+        if contours:
+            (cX, cZ), radius = cv2.minEnclosingCircle(contours[0])
+            #cX = (M["m10"] / M["m00"])
+            #cZ = (M["m01"] / M["m00"])
             self.joint_momentums[jointIndex] = np.subtract([cX, cZ], self.joint_centres[jointIndex, :2])
             self.joint_centres[jointIndex] = [cX, cZ, 0]
         else:

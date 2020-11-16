@@ -37,14 +37,19 @@ class image_converter:
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
-        redMask = cv2.inRange(self.img1HSV, (hueFloor, 100, 100), (hueCeiling, 255, 255))
-        redImg = cv2.bitwise_and(self.cv_image1, self.cv_image1, mask=redMask)
-        redImg_grey = cv2.cvtColor(redImg, cv2.COLOR_BGR2GRAY)
-        ret, thresh = cv2.threshold(redImg_grey, 1, 255, 0)
-        M = cv2.moments(thresh)
-        if M["m00"] != 0:
-            cY = int(M["m10"] / M["m00"])
-            cZ = int(M["m01"] / M["m00"])
+        colourMask = cv2.inRange(self.img1HSV, (hueFloor, 100, 100), (hueCeiling, 255, 255))
+        colourImg = cv2.bitwise_and(self.cv_image1, self.cv_image1, mask=colourMask)
+        img_grey = cv2.cvtColor(colourImg, cv2.COLOR_BGR2GRAY)
+        ret, thresh = cv2.threshold(img_grey, 1, 255, 0)
+        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
+        cv2.drawContours(self.cv_image1, contours, -1, (0, 255, 0), 3)
+        cv2.waitKey(1)
+        #M = cv2.moments(thresh)
+        #if M["m00"] != 0:
+        if contours:
+            (cY, cZ), radius = cv2.minEnclosingCircle(contours[0])
+            #cY = (M["m10"] / M["m00"])
+            #cZ = (M["m01"] / M["m00"])
             self.joint_momentums[jointIndex] = np.subtract([cY, cZ], self.joint_centres[jointIndex, :2])
             self.joint_centres[jointIndex] = [cY, cZ, 0]
         else:
@@ -53,7 +58,7 @@ class image_converter:
             self.joint_centres[jointIndex] = [cY, cZ, 1]
 
         cv2.circle(self.cv_image1, (int(cY), int(cZ)), 2, (255, 255, 255), -1)
-        return np.array([cY, cZ])
+        return
 
     # Recieve data from camera 1, process it, and publish
     def callback1(self, data):
@@ -84,18 +89,17 @@ class image_converter:
         self.joint2.data = np.pi / 2 * np.sin((np.pi / 15) * t)
         self.joint3 = Float64()
         self.joint3.data = np.pi / 2 * np.sin((np.pi / 18) * t)
+        # Use pi/3 rather than pi/2 to prevent the arm knocking itself about
         self.joint4 = Float64()
-        self.joint4.data = np.pi / 2 * np.sin((np.pi / 20) * t)
+        self.joint4.data = np.pi / 3 * np.sin((np.pi / 20) * t)
 
         # Publish the results
         try:
             self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
             self.joints_pos1_pub.publish(self.js)
-            """
             self.robot_joint2_pub.publish(self.joint2)
             self.robot_joint3_pub.publish(self.joint3)
             self.robot_joint4_pub.publish(self.joint4)
-            """
         except CvBridgeError as e:
             print(e)
 
