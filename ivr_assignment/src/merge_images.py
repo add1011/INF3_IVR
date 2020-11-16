@@ -19,6 +19,8 @@ class image_merger:
         rospy.init_node('image_merger', anonymous=True)
 
         # self.image2_sub = rospy.Subscriber("joints_pos2", Float64MultiArray, self.listen_joints_pos2)
+        self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
+        self.joint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
 
         # initialize a subscriber to receive messages from a topic named joints_pos1_sub and use listen_joints_pos1 function to receive data
         self.joints_pos1_sub = message_filters.Subscriber("joints_pos1", Float64MultiArray)
@@ -62,23 +64,62 @@ class image_merger:
         metreInPixels = (np.linalg.norm(joints_pos[2] - joints_pos[3])) / 3
         return joints_pos / metreInPixels
 
-    def callback(self, data1, data2):
+    def calcAngle(self, v1, v2):
+        v1_norm = v1 / np.linalg.norm(v1)
+        v2_norm = v2 / np.linalg.norm(v2)
+        s = np.linalg.norm(np.cross(v1, v2))
+        c = np.dot(v1, v2)
+        angle = np.arctan2(s, c)
+        return angle
+
+    def callback(self, camera1data, camera2data):
+        # recieve the position data from each image
         try:
-            joints_pos1 = np.asarray(data1.data).reshape(4, 3)
-            joints_pos2 = np.asarray(data2.data).reshape(4, 3)
+            joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
+            joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
         except CvBridgeError as e:
             print(e)
 
-        print(joints_pos1, ",")
-        print(joints_pos2)
-        print()
+        # print(joints_pos1, ",")
+        # print(joints_pos2)
+        # print()
+        # merge the data into 3d position coordinates
         joints_pos = self.calc3dCoords(joints_pos1, joints_pos2)
-        print(joints_pos)
-        relative_joints_pos = self.makeRelative(joints_pos)
-        print(relative_joints_pos)
-        relative_joints_pos = self.pixel2meter(relative_joints_pos)
-        print(relative_joints_pos)
-        print("--------------")
+        # print(joints_pos)
+        # make the coordinates relative to the unmoving yellow joint
+        joints_pos = self.makeRelative(joints_pos)
+        # print(joints_pos)
+        # make the coordinates in terms of meters
+        joints_pos = self.pixel2meter(joints_pos)
+
+        a = np.arctan2(joints_pos[1][2], joints_pos[1][1]) - np.pi / 2
+
+        joint2a = a * 9.05330324620832639392
+
+        if joint2a > 1:
+            joint2a += (abs(joint2a) - 1)/2
+        elif joint2a < -1:
+            joint2a -= (abs(joint2a) - 1)/2
+
+
+        print(joint2a)
+
+        if joint2a > (np.pi / 2):
+            joint2a = np.pi / 2
+        elif joint2a < -(np.pi / 2):
+            joint2a = -np.pi / 2
+
+        self.joint2 = Float64()
+        self.joint2.data = joint2a
+
+        #self.joint4 = Float64()
+        #self.joint4.data = self.calcAngle(joints_pos[2] - joints_pos[1], joints_pos[3] - joints_pos[2])
+
+        try:
+            self.joint2_pub.publish(self.joint2)
+            #self.joint4_pub.publish(self.joint4)
+        except CvBridgeError as e:
+            print(e)
         return
 
 
