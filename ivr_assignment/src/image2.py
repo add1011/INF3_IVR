@@ -33,7 +33,7 @@ class image_converter:
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
-        colourMask = cv2.inRange(self.img2HSV, (hueFloor, 100, 100), (hueCeiling, 255, 255))
+        colourMask = cv2.inRange(self.img2HSV, (hueFloor, 80, 80), (hueCeiling, 255, 255))
         colourImg = cv2.bitwise_and(self.cv_image2, self.cv_image2, mask=colourMask)
         img_grey = cv2.cvtColor(colourImg, cv2.COLOR_BGR2GRAY)
         ret, thresh = cv2.threshold(img_grey, 1, 255, 0)

@@ -37,7 +37,7 @@ class image_converter:
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
-        colourMask = cv2.inRange(self.img1HSV, (hueFloor, 100, 100), (hueCeiling, 255, 255))
+        colourMask = cv2.inRange(self.img1HSV, (hueFloor, 80, 80), (hueCeiling, 255, 255))
         colourImg = cv2.bitwise_and(self.cv_image1, self.cv_image1, mask=colourMask)
         img_grey = cv2.cvtColor(colourImg, cv2.COLOR_BGR2GRAY)
         ret, thresh = cv2.threshold(img_grey, 1, 255, 0)
@@ -68,6 +68,7 @@ class image_converter:
         except CvBridgeError as e:
             print(e)
 
+
         self.img1HSV = cv2.cvtColor(self.cv_image1, cv2.COLOR_BGR2HSV)
 
         self.detectColour(20, 40, 0)
@@ -92,6 +93,10 @@ class image_converter:
         # Use pi/3 rather than pi/2 to prevent the arm knocking itself about
         self.joint4 = Float64()
         self.joint4.data = np.pi / 3 * np.sin((np.pi / 20) * t)
+
+        #self.joint2.data = 0
+        #self.joint3.data = 0
+        #self.joint4.data = 0
 
         # Publish the results
         try:
