@@ -34,6 +34,8 @@ class image_merger:
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
+        self.lastJoint2Angle = 0
+
     def calc3dCoords(self, joints_pos1, joints_pos2):
         joints_pos = np.zeros((4, 3))
         for j in range(4):
@@ -72,6 +74,32 @@ class image_merger:
         angle = np.arctan2(s, c)
         return angle
 
+    def calcJoint2Angle(self, joints_pos):
+        a = np.arctan2(joints_pos[1][2], joints_pos[1][1]) - np.pi / 2
+
+        joint2Angle = a * 9.05330324620832639392
+
+        if joint2Angle > 1:
+            joint2Angle += (abs(joint2Angle) - 1)
+        elif joint2Angle < -1:
+            joint2Angle -= (abs(joint2Angle) - 1)
+
+        if joint2Angle > (np.pi / 2):
+            joint2a = np.pi / 2
+        elif joint2Angle < -(np.pi / 2):
+            joint2a = -np.pi / 2
+
+        difference = self.lastJoint2Angle - joint2Angle
+        joint2Angle += difference / 2
+
+        if joint2Angle > (np.pi / 2):
+            joint2a = np.pi / 2
+        elif joint2Angle < -(np.pi / 2):
+            joint2a = -np.pi / 2
+
+        self.lastJoint2Angle = joint2Angle
+        return joint2Angle
+
     def callback(self, camera1data, camera2data):
         # recieve the position data from each image
         try:
@@ -92,25 +120,10 @@ class image_merger:
         # make the coordinates in terms of meters
         joints_pos = self.pixel2meter(joints_pos)
 
-        a = np.arctan2(joints_pos[1][2], joints_pos[1][1]) - np.pi / 2
-
-        joint2a = a * 9.05330324620832639392
-
-        if joint2a > 1:
-            joint2a += (abs(joint2a) - 1)/2
-        elif joint2a < -1:
-            joint2a -= (abs(joint2a) - 1)/2
-
-
-        print(joint2a)
-
-        if joint2a > (np.pi / 2):
-            joint2a = np.pi / 2
-        elif joint2a < -(np.pi / 2):
-            joint2a = -np.pi / 2
+        joint2Angle = self.calcJoint2Angle(joints_pos)
 
         self.joint2 = Float64()
-        self.joint2.data = joint2a
+        self.joint2.data = joint2Angle
 
         #self.joint4 = Float64()
         #self.joint4.data = self.calcAngle(joints_pos[2] - joints_pos[1], joints_pos[3] - joints_pos[2])
