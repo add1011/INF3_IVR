@@ -17,7 +17,7 @@ class image_merger:
     def __init__(self):
         # initialize the node named image_processing
         rospy.init_node('image_merger', anonymous=True)
-
+        self.target_pos_pub = rospy.Publisher("target_pos",Float64MultiArray,queue_size=10)
         # self.image2_sub = rospy.Subscriber("joints_pos2", Float64MultiArray, self.listen_joints_pos2)
         self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
         self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
@@ -32,7 +32,11 @@ class image_merger:
             [self.joints_pos1_sub, self.joints_pos2_sub],
             queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
-
+        
+        # initialize a subscriber to receive messages from a topic named target_pos1
+        self.target_pos1_sub = rospy.Subscriber("target_pos1",Float64MultiArray,self.callback)
+        # initialize a subscriber to receive messages from a topic named target_pos2
+        self.target_pos2_sub = rospy.Subscriber("target_pos2", Float64MultiArray,self.callback)
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
@@ -151,12 +155,27 @@ class image_merger:
             joint4Angle = -np.pi / 2
 
         return -joint4Angle
+    
+    def target3Dcord(self,target_pos1,target_pos2):
+        target_pos = np.zeros((1,3))
+        x = target_pos2[0,0]
+        y = target_pos1[0,0]
+        if(target_pos1[0,2]==0 and target_pos2[0,2]!=0):
+            z = target_pos1[0,1]
+        elif(target_pos1[0,2]!=0 and target_pos2[0,2]==0):
+            z = target_pos2[0,1]
+        else:
+            z = ((target_pos1[0,1]+target_pos2[0,1])/2)
+        target_pos[0] = [x,y,z]
+        return target_pos
 
-    def callback(self, camera1data, camera2data):
+    def callback(self, camera1data, camera2data, target_data1, target_data2):
         # recieve the position data from each image
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
+            target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1,3)
+            target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1,3)
         except CvBridgeError as e:
             print(e)
 
@@ -182,11 +201,16 @@ class image_merger:
 
         self.joint4 = Float64()
         self.joint4.data = joint4Angle
+        
+        self.target = Float64MultiArray()
+        self.target = self.target3Dcord(target_pos1,target_pos2)
+        self.target = self.pixel2meter(self.target)
 
         try:
             self.joint2_pub.publish(self.joint2)
             self.joint3_pub.publish(self.joint3)
             self.joint4_pub.publish(self.joint4)
+            self.target_pos_pub.publish(self.target)
         except CvBridgeError as e:
             print(e)
         return
