@@ -23,14 +23,16 @@ class image_merger:
         self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
         self.joint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
 
+        self.joint2 = Float64()
+        self.joint3 = Float64()
+        self.joint4 = Float64()
+
         # initialize a subscriber to receive messages from a topic named joints_pos1_sub and use listen_joints_pos1 function to receive data
         self.joints_pos1_sub = message_filters.Subscriber("joints_pos1", Float64MultiArray)
         # initialize a subscriber to receive messages from a topic named joints_pos2_sub and use listen_joints_pos2 function to receive data
         self.joints_pos2_sub = message_filters.Subscriber("joints_pos2", Float64MultiArray)
 
-        self.joint2_angle_sub = message_filters.Subscriber("/robot/joint2_position_controller/command", Float64)
-
-        self.ts = message_filters.ApproximateTimeSynchronizer([self.joints_pos1_sub, self.joints_pos2_sub, self.joint2_angle_sub],
+        self.ts = message_filters.ApproximateTimeSynchronizer([self.joints_pos1_sub, self.joints_pos2_sub],
                                                               queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
 
@@ -77,8 +79,8 @@ class image_merger:
         angle = np.arctan2(s, c)
         return angle
 
-    def calcJoint2Angle(self, joints_pos):
-        a = np.arctan2(joints_pos[1][2], joints_pos[1][1]) - np.pi / 2
+    def calcJoint2Angle(self):
+        a = np.arctan2(self.joints_pos[1][2], self.joints_pos[1][1]) - np.pi / 2
 
         joint2Angle = a * 9.05330324620832639392
 
@@ -103,28 +105,18 @@ class image_merger:
         self.lastJoint2Angle = joint2Angle
         return joint2Angle
 
-    def calcJoint3Angle(self, joints_pos, joint2Angle):
-        # orientation = np.array([0, 0, self.joints_pos_orig[0, 2] - 480])
-        # orientation = self.pixel2meter(orientation)
+    def calcJoint3Angle(self, joint2Angle):
+        x = self.joints_pos[2, 0] - self.joints_pos[1, 0]
+        y = self.joints_pos[2, 1] - self.joints_pos[1, 1]
+        z = self.joints_pos[2, 2] - self.joints_pos[1, 2]
 
-        x = joints_pos[2, 0] - joints_pos[1, 0]
-        y = joints_pos[2, 1] - joints_pos[1, 1]
-        z = joints_pos[2, 2] - joints_pos[1, 2]
-        #x = joints_pos[2, 0] - orientation[0]
-        #y = joints_pos[2, 1] - orientation[1]
-        #z = joints_pos[2, 2] - orientation[2]
-        theta = joint2Angle * -1
+        theta = -joint2Angle
 
         xrot = np.array([x,
-                         y*np.cos(theta) - z*np.sin(theta),
-                         y*np.sin(theta) + z*np.cos(theta)])
-
-        print(joints_pos[2])
-        print(xrot + joints_pos[1])
-        print()
+                         y * np.cos(theta) - z * np.sin(theta),
+                         y * np.sin(theta) + z * np.cos(theta)])
 
         joint3Angle = np.arctan2(xrot[2], xrot[0]) - np.pi / 2
-        # joint3Angle = np.arctan2(joints_pos[2][2] - joints_pos[1][2] + 0.5, joints_pos[2][0] - joints_pos[1][0]) - np.pi / 2
 
         if joint3Angle > (np.pi / 2):
             joint3Angle = np.pi / 2
@@ -133,12 +125,49 @@ class image_merger:
 
         return -joint3Angle
 
-    def callback(self, camera1data, camera2data, realJoint2Angle):
+    def calcJoint4Angle(self, joint2Angle, joint3Angle):
+        x1 = self.joints_pos[2, 0] - self.joints_pos[1, 0]
+        y1 = self.joints_pos[2, 1] - self.joints_pos[1, 1]
+        z1 = self.joints_pos[2, 2] - self.joints_pos[1, 2]
+
+        x2 = self.joints_pos[3, 0] - self.joints_pos[1, 0]
+        y2 = self.joints_pos[3, 1] - self.joints_pos[1, 1]
+        z2 = self.joints_pos[3, 2] - self.joints_pos[1, 2]
+
+        theta = -joint2Angle
+
+        xrot1 = np.array([x1,
+                          y1 * np.cos(theta) - z1 * np.sin(theta),
+                          y1 * np.sin(theta) + z1 * np.cos(theta)])
+
+        xrot2 = np.array([x2,
+                          y2 * np.cos(theta) - z2 * np.sin(theta),
+                          y2 * np.sin(theta) + z2 * np.cos(theta)])
+
+        theta = -joint3Angle
+
+        xyrot1 = np.array([xrot1[0] * np.cos(theta) + xrot1[2] * np.sin(theta),
+                           xrot1[1],
+                           -xrot1[0] * np.sin(theta) + xrot1[2] * np.cos(theta)])
+
+        xyrot2 = np.array([xrot2[0] * np.cos(theta) + xrot2[2] * np.sin(theta),
+                           xrot2[1],
+                           -xrot2[0] * np.sin(theta) + xrot2[2] * np.cos(theta)])
+
+        joint4Angle = np.arctan2(xyrot2[2] - xyrot1[2], xyrot2[1] - xyrot1[1]) - np.pi / 2
+
+        if joint4Angle > (np.pi / 2):
+            joint4Angle = np.pi / 2
+        elif joint4Angle < -(np.pi / 2):
+            joint4Angle = -np.pi / 2
+
+        return joint4Angle
+
+    def callback(self, camera1data, camera2data):
         # recieve the position data from each image
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
-            actualJoint2Angle = realJoint2Angle.data
         except CvBridgeError as e:
             print(e)
 
@@ -147,33 +176,32 @@ class image_merger:
         # print(joints_pos2)
         # print()
         # merge the data into 3d position coordinates
-        self.joints_pos_orig = self.calc3dCoords(joints_pos1, joints_pos2)
+        self.joints_pos = self.calc3dCoords(joints_pos1, joints_pos2)
         # print(joints_pos)
         # make the coordinates relative to the unmoving yellow joint
-        joints_pos = self.makeRelative(self.joints_pos_orig)
+        self.joints_pos = self.makeRelative(self.joints_pos)
         # print(joints_pos)
         # make the coordinates in terms of meters
-        joints_pos = self.pixel2meter(joints_pos)
+        self.joints_pos = self.pixel2meter(self.joints_pos)
 
         # print(joints_pos)
 
-        joint2Angle = self.calcJoint2Angle(joints_pos)
+        joint2Angle = self.calcJoint2Angle()
 
-        self.joint2 = Float64()
         self.joint2.data = joint2Angle
 
-        joint3Angle = self.calcJoint3Angle(joints_pos, joint2Angle)
+        joint3Angle = self.calcJoint3Angle(joint2Angle)
 
-        self.joint3 = Float64()
         self.joint3.data = joint3Angle
 
-        # self.joint4 = Float64()
-        # self.joint4.data = self.calcAngle(joints_pos[2] - joints_pos[1], joints_pos[3] - joints_pos[2])
+        joint4Angle = self.calcJoint4Angle(joint2Angle, joint3Angle)
+
+        self.joint4.data = joint4Angle
 
         try:
             self.joint2_pub.publish(self.joint2)
             self.joint3_pub.publish(self.joint3)
-            # self.joint4_pub.publish(self.joint4)
+            self.joint4_pub.publish(self.joint4)
         except CvBridgeError as e:
             print(e)
         return
