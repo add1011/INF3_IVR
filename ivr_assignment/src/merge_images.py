@@ -17,7 +17,9 @@ class image_merger:
     def __init__(self):
         # initialize the node named image_processing
         rospy.init_node('image_merger', anonymous=True)
-        self.target_pos_pub = rospy.Publisher("target_pos", Float64MultiArray, queue_size=10)
+        self.targetx_pub = rospy.Publisher("targetx", Float64, queue_size=10)
+        self.targetx_pub = rospy.Publisher("targety", Float64, queue_size=10)
+        self.targetx_pub = rospy.Publisher("targetz", Float64, queue_size=10)
         # self.image2_sub = rospy.Subscriber("joints_pos2", Float64MultiArray, self.listen_joints_pos2)
         self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
         self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
@@ -266,29 +268,36 @@ class image_merger:
         self.joints_pos = self.pixel2meter(self.joints_pos)
 
         joint2Angle = self.calcJoint2Angle()
-
         self.joint2 = Float64()
         self.joint2.data = joint2Angle
 
         joint3Angle = self.calcJoint3Angle(joint2Angle)
-
         self.joint3 = Float64()
         self.joint3.data = joint3Angle
 
         joint4Angle = self.calcJoint4Angle(joint2Angle, joint3Angle)
-
         self.joint4 = Float64()
         self.joint4.data = joint4Angle
 
-        self.target = Float64MultiArray()
         self.target = self.target3Dcord(target_pos1, target_pos2)
         self.target = self.pixel2meter(self.target)
+
+        self.targetx = Float64()
+        self.targetx.data = self.target[0]
+
+        self.targety = Float64()
+        self.targety.data = self.target[1]
+
+        self.targetz = Float64()
+        self.targetz.data = self.target[2]
 
         try:
             self.joint2_pub.publish(self.joint2)
             self.joint3_pub.publish(self.joint3)
             self.joint4_pub.publish(self.joint4)
-            self.target_pos_pub.publish(self.target)
+            self.targetx_pub.publish(self.targetx)
+            self.targety_pub.publish(self.targety)
+            self.targetz_pub.publish(self.targetz)
         except CvBridgeError as e:
             print(e)
         return
