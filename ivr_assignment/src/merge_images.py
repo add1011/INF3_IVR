@@ -17,17 +17,16 @@ class image_merger:
     def __init__(self):
         # initialize the node named image_processing
         rospy.init_node('image_merger', anonymous=True)
-        self.targetx_pub = rospy.Publisher("targetx", Float64, queue_size=10)
-        self.targetx_pub = rospy.Publisher("targety", Float64, queue_size=10)
-        self.targetx_pub = rospy.Publisher("targetz", Float64, queue_size=10)
-        # self.image2_sub = rospy.Subscriber("joints_pos2", Float64MultiArray, self.listen_joints_pos2)
+
+        self.target_pub = rospy.Publisher("target_pos", Float64, queue_size=10)
+
         self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
         self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
         self.joint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
 
-        # initialize a subscriber to receive messages from a topic named joints_pos1_sub and use listen_joints_pos1 function to receive data
+        # initialize a subscriber to receive messages from a topic named joints_pos1_sub
         self.joints_pos1_sub = message_filters.Subscriber("joints_pos1", Float64MultiArray)
-        # initialize a subscriber to receive messages from a topic named joints_pos2_sub and use listen_joints_pos2 function to receive data
+        # initialize a subscriber to receive messages from a topic named joints_pos2_sub
         self.joints_pos2_sub = message_filters.Subscriber("joints_pos2", Float64MultiArray)
 
         # initialize a subscriber to receive messages from a topic named target_pos1
@@ -254,8 +253,8 @@ class image_merger:
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
-            target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1,3)
-            target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1,3)
+            target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1, 3)
+            target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1, 3)
         except CvBridgeError as e:
             print(e)
 
@@ -279,25 +278,17 @@ class image_merger:
         self.joint4 = Float64()
         self.joint4.data = joint4Angle
 
-        self.target = self.target3Dcord(target_pos1, target_pos2)
-        self.target = self.pixel2meter(self.target)
+        target_pos = self.target3Dcord(target_pos1, target_pos2)
+        target_pos = self.pixel2meter(target_pos)
 
-        self.targetx = Float64()
-        self.targetx.data = self.target[0]
-
-        self.targety = Float64()
-        self.targety.data = self.target[1]
-
-        self.targetz = Float64()
-        self.targetz.data = self.target[2]
+        self.target = Float64MultiArray
+        self.target.data = target_pos
 
         try:
             self.joint2_pub.publish(self.joint2)
             self.joint3_pub.publish(self.joint3)
             self.joint4_pub.publish(self.joint4)
-            self.targetx_pub.publish(self.targetx)
-            self.targety_pub.publish(self.targety)
-            self.targetz_pub.publish(self.targetz)
+            self.target_pub(self.target)
         except CvBridgeError as e:
             print(e)
         return
