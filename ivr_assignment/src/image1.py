@@ -5,6 +5,7 @@ import sys
 import rospy
 import cv2
 import numpy as np
+import imutils
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
@@ -25,6 +26,8 @@ class image_converter:
         self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
         self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
         self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
+        # initialize a publisher to send position of target to a topic called target_pos1
+        self.target_pos1_pub = rospy.Publisher("target_pos1",Float64MultiArray, queue_size=10)
         # initialize a subscriber to receive messages from a topic named /robot/camera1/image_raw and use callback function to receive data
         self.image_sub1 = rospy.Subscriber("/camera1/robot/image_raw", Image, self.callback1)
         # initialize the bridge between openCV and ROS
@@ -35,6 +38,8 @@ class image_converter:
 
         # save the momentum of each joint to help estimate position when they cannot be seen
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
+        
+        self.target_centre = np.zeros((1,3),dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
         colourMask = cv2.inRange(self.img1HSV, (hueFloor, 80, 80), (hueCeiling, 255, 255))
@@ -59,6 +64,38 @@ class image_converter:
 
         cv2.circle(self.cv_image1, (int(cY), int(cZ)), 2, (255, 255, 255), -1)
         return
+    
+   def detect_shape(self,c):
+    shape = "unidentified"
+    perimeter = cv2.arcLength(c,True)
+    approx = cv2.approxPolyDP(c,0.04*perimeter,True)
+    if(len(approx)==4):
+      shape = "square"
+    else:
+      shape = "circle"
+    return shape
+
+  def detect_target(self, image):
+    orangeMask = cv2.inRange(image, (5,50,50), (15,255,255))
+    orangeImg = cv2.bitwise_and(image,image,mask=orangeMask)
+    orangeImg_grey = cv2.cvtColor(orangeImg, cv2.COLOR_BGR2GRAY)
+    ret, thresh = cv2.threshold(orangeImg_grey,127,255,cv2.THRESH_BINARY)
+    contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours = imutils.grab_contours(contours)
+    cY,cZ=0,0
+    for i in contours:
+      shape = self.detect_shape(i)
+      if(shape=="circle"):
+        M = cv2.moments(i)
+        if(M["m00"]!=0):
+          cY = int(M["m10"]/M["m00"])
+          cZ = int(M["m01"]/M["m00"])
+          self.target_centre[0] = [cY,cZ,0]
+        else:
+          cY,cZ = self.target_centre[0, :2]
+          self.target_centre[0] = [cY,cZ,1]
+    cv2.circle(self.cv_image1,(int(cY),int(cZ)), 1, (255,255,255),-1)
+    return np.array([cY,cZ])
 
     # Recieve data from camera 1, process it, and publish
     def callback1(self, data):
@@ -78,6 +115,10 @@ class image_converter:
 
         self.js = Float64MultiArray()
         self.js.data = self.joint_centres.flatten()
+        
+        self.detect_target(self.img1HSV)
+        self.target = Float64MultiArray()
+        self.target.data = self.target_centre.flatten()
 
         # Uncomment if you want to save the image
         # cv2.imwrite('image_copy.png', cv_image)
@@ -105,6 +146,8 @@ class image_converter:
             self.robot_joint2_pub.publish(self.joint2)
             self.robot_joint3_pub.publish(self.joint3)
             self.robot_joint4_pub.publish(self.joint4)
+            
+            self.target_pos1_pub.publish(self.target)
         except CvBridgeError as e:
             print(e)
 
