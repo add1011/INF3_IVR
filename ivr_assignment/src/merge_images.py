@@ -18,9 +18,19 @@ class image_merger:
         # initialize the node named image_processing
         rospy.init_node('image_merger', anonymous=True)
 
+        # initialize a publisher to send joints' position to a topic called joints_pos1
         self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
         self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
         self.joint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
+
+        self.targetx_pub = rospy.Publisher("target_xpos", Float64, queue_size=10)
+        self.targety_pub = rospy.Publisher("target_ypos", Float64, queue_size=10)
+        self.targetz_pub = rospy.Publisher("target_zpos", Float64, queue_size=10)
+
+        # initialize a subscriber to receive messages from a topic named target_pos1
+        self.target_pos1_sub = message_filters.Subscriber("target_pos1", Float64MultiArray)
+        # initialize a subscriber to receive messages from a topic named target_pos2
+        self.target_pos2_sub = message_filters.Subscriber("target_pos2", Float64MultiArray)
 
         # initialize a subscriber to receive messages from a topic named joints_pos1_sub
         self.joints_pos1_sub = message_filters.Subscriber("joints_pos1", Float64MultiArray)
@@ -28,7 +38,7 @@ class image_merger:
         self.joints_pos2_sub = message_filters.Subscriber("joints_pos2", Float64MultiArray)
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
-            [self.joints_pos1_sub, self.joints_pos2_sub],
+            [self.joints_pos1_sub, self.joints_pos2_sub, self.target_pos1_sub, self.target_pos2_sub],
             queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
 
@@ -55,16 +65,16 @@ class image_merger:
             joints_pos[j] = [x, y, z]
         return joints_pos
 
-    def makeRelative(self, joints_pos):
-        relativePositions = np.zeros((4, 3))
-        relativePositions[:, 0] = joints_pos[:, 0] - joints_pos[0, 0]
-        relativePositions[:, 1] = joints_pos[:, 1] - joints_pos[0, 1]
-        relativePositions[:, 2] = joints_pos[0, 2] - joints_pos[:, 2]
+    def makeRelative(self, coordinates):
+        relativePositions = np.zeros(coordinates.shape)
+        relativePositions[:, 0] = coordinates[:, 0] - self.joints_pos_orig[0, 0]
+        relativePositions[:, 1] = coordinates[:, 1] - self.joints_pos_orig[0, 1]
+        relativePositions[:, 2] = self.joints_pos_orig[0, 2] - coordinates[:, 2]
         return relativePositions
 
     def pixel2meter(self, joints_pos):
         # use last two joints as the distance between them will always be the same
-        metreInPixels = (np.linalg.norm(joints_pos[0] - joints_pos[1])) / 2.5
+        # metreInPixels = (np.linalg.norm(joints_pos[0] - joints_pos[1])) / 2.5
         return joints_pos / 25.934213568650648
 
     def calcJoint2Angle(self):
@@ -225,7 +235,6 @@ class image_merger:
         return
 
     def target3Dcord(self, target_pos1, target_pos2):
-        target_pos = np.zeros((1, 3))
         x = target_pos2[0, 0]
         y = target_pos1[0, 0]
         if target_pos1[0, 2] == 0 and target_pos2[0, 2] != 0:
@@ -234,14 +243,16 @@ class image_merger:
             z = target_pos2[0, 1]
         else:
             z = ((target_pos1[0, 1]+target_pos2[0, 1])/2)
-        target_pos[0] = [x, y, z]
+        target_pos = np.array([[x, y, z]], dtype='float64')
         return target_pos
 
-    def callback(self, camera1data, camera2data):
+    def callback(self, camera1data, camera2data, target_data1, target_data2):
         # recieve the position data from each image
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
+            target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1, 3)
+            target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1, 3)
         except CvBridgeError as e:
             print(e)
 
@@ -265,7 +276,21 @@ class image_merger:
         self.joint4 = Float64()
         self.joint4.data = joint4Angle
 
+        target_pos = self.target3Dcord(target_pos1, target_pos2)
+        target_pos = self.makeRelative(target_pos)
+        target_pos = self.pixel2meter(target_pos)
+        self.targetx = Float64()
+        self.targetx.data = target_pos[0, 0]
+        self.targety = Float64()
+        self.targety.data = target_pos[0, 1]
+        self.targetz = Float64()
+        self.targetz.data = target_pos[0, 2]
+
         try:
+            self.targetx_pub.publish(self.targetx)
+            self.targety_pub.publish(self.targety)
+            self.targetz_pub.publish(self.targetz)
+
             self.joint2_pub.publish(self.joint2)
             self.joint3_pub.publish(self.joint3)
             self.joint4_pub.publish(self.joint4)
