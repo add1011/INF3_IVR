@@ -34,8 +34,8 @@ class image_converter:
 
         # save the momentum of each joint to help estimate position when they cannot be seen
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
-        
-        self.target_centre = np.zeros((1,3),dtype='float64')
+
+        self.target_centre = np.zeros((1, 3), dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
         colourMask = cv2.inRange(self.img2HSV, (hueFloor, 80, 80), (hueCeiling, 255, 255))
@@ -43,14 +43,9 @@ class image_converter:
         img_grey = cv2.cvtColor(colourImg, cv2.COLOR_BGR2GRAY)
         ret, thresh = cv2.threshold(img_grey, 1, 255, 0)
         contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-        cv2.drawContours(self.cv_image2, contours, -1, (0, 255, 0), 3)
-        cv2.waitKey(1)
-        #M = cv2.moments(thresh)
-        #if M["m00"] != 0:
         if contours:
             (cX, cZ), radius = cv2.minEnclosingCircle(contours[0])
-            #cX = (M["m10"] / M["m00"])
-            #cZ = (M["m01"] / M["m00"])
+            cv2.circle(self.cv_image2, (int(cX), int(cZ)), int(radius), (255, 255, 255), 1)
             self.joint_momentums[jointIndex] = np.subtract([cX, cZ], self.joint_centres[jointIndex, :2])
             self.joint_centres[jointIndex] = [cX, cZ, 0]
         else:
@@ -60,38 +55,38 @@ class image_converter:
 
         cv2.circle(self.cv_image2, (int(cX), int(cZ)), 2, (255, 255, 255), -1)
         return
-    
-  def detect_shape(self,c):
-    shape = "unidentified"
-    perimeter = cv2.arcLength(c,True)
-    approx = cv2.approxPolyDP(c,0.04*perimeter,True)
-    if(len(approx)==4):
-      shape = "square"
-    else:
-      shape = "circle"
-    return shape
 
-  def detect_target(self, image):
-    orangeMask = cv2.inRange(image, (5,50,50), (15,255,255))
-    orangeImg = cv2.bitwise_and(image,image,mask=orangeMask)
-    orangeImg_grey = cv2.cvtColor(orangeImg, cv2.COLOR_BGR2GRAY)
-    ret, thresh = cv2.threshold(orangeImg_grey,127,255,cv2.THRESH_BINARY)
-    contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = imutils.grab_contours(contours)
-    cX,cZ = 0,0
-    for i in contours:
-      shape = self.detect_shape(i)
-      if(shape=="circle"):
-        M = cv2.moments(i)
-        if(M["m00"]!=0):
-          cX = int(M["m10"]/M["m00"])
-          cZ = int(M["m01"]/M["m00"])
-          self.target_centre[0] = [cX,cZ,0]
+    def detect_shape(self, c):
+        shape = "unidentified"
+        perimeter = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.04 * perimeter, True)
+        if len(approx) == 4:
+            shape = "square"
         else:
-          cX,cZ = self.target_centre[0, :2]
-          self.target_centre[0] = [cX,cZ,1]
-    cv2.circle(self.cv_image2,(int(cX),int(cZ)), 1, (255,255,255),-1)
-    return np.array([cX,cZ])
+            shape = "circle"
+        return shape
+
+    def detect_target(self, image):
+        orangeMask = cv2.inRange(image, (5, 50, 50), (15, 255, 255))
+        orangeImg = cv2.bitwise_and(image, image, mask=orangeMask)
+        orangeImg_grey = cv2.cvtColor(orangeImg, cv2.COLOR_BGR2GRAY)
+        ret, thresh = cv2.threshold(orangeImg_grey, 127, 255, cv2.THRESH_BINARY)
+        contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours = imutils.grab_contours(contours)
+        cX, cZ = 0, 0
+        for i in contours:
+            shape = self.detect_shape(i)
+            if shape == "circle":
+                M = cv2.moments(i)
+                if M["m00"] != 0:
+                    cX = int(M["m10"] / M["m00"])
+                    cZ = int(M["m01"] / M["m00"])
+                    self.target_centre[0] = [cX, cZ, 0]
+                else:
+                    cX, cZ = self.target_centre[0, :2]
+                    self.target_centre[0] = [cX, cZ, 1]
+        cv2.circle(self.cv_image2, (int(cX), int(cZ)), 1, (255, 255, 255), -1)
+        return np.array([cX, cZ])
 
     # Recieve data, process it, and publish
     def callback2(self, data):
@@ -110,11 +105,11 @@ class image_converter:
 
         self.js = Float64MultiArray()
         self.js.data = self.joint_centres.flatten()
-        
+
         self.detect_target(self.img2HSV)
         self.target = Float64MultiArray()
         self.target.data = self.target_centre.flatten()
-        
+
         # Uncomment if you want to save the image
         # cv2.imwrite('image_copy.png', cv_image)
         im2 = cv2.imshow('window2', self.cv_image2)
@@ -124,7 +119,6 @@ class image_converter:
         try:
             self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
             self.joints_pos2_pub.publish(self.js)
-            self.target_pos2_pub.publish(self.target)
         except CvBridgeError as e:
             print(e)
 
