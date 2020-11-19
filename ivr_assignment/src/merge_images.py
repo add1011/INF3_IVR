@@ -20,6 +20,7 @@ class image_merger:
 
         # self.image2_sub = rospy.Subscriber("joints_pos2", Float64MultiArray, self.listen_joints_pos2)
         self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
+        self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
         self.joint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
 
         # initialize a subscriber to receive messages from a topic named joints_pos1_sub and use listen_joints_pos1 function to receive data
@@ -27,7 +28,9 @@ class image_merger:
         # initialize a subscriber to receive messages from a topic named joints_pos2_sub and use listen_joints_pos2 function to receive data
         self.joints_pos2_sub = message_filters.Subscriber("joints_pos2", Float64MultiArray)
 
-        self.ts = message_filters.ApproximateTimeSynchronizer([self.joints_pos1_sub, self.joints_pos2_sub],
+        self.joint2_angle_sub = message_filters.Subscriber("/robot/joint2_position_controller/command", Float64)
+
+        self.ts = message_filters.ApproximateTimeSynchronizer([self.joints_pos1_sub, self.joints_pos2_sub, self.joint2_angle_sub],
                                                               queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
 
@@ -63,8 +66,8 @@ class image_merger:
 
     def pixel2meter(self, joints_pos):
         # use last two joints as the distance between them will always be the same
-        metreInPixels = (np.linalg.norm(joints_pos[2] - joints_pos[3])) / 3
-        return joints_pos / metreInPixels
+        metreInPixels = (np.linalg.norm(joints_pos[0] - joints_pos[1])) / 2.5
+        return joints_pos / 25.934213568650648
 
     def calcAngle(self, v1, v2):
         v1_norm = v1 / np.linalg.norm(v1)
@@ -85,52 +88,92 @@ class image_merger:
             joint2Angle -= (abs(joint2Angle) - 1)
 
         if joint2Angle > (np.pi / 2):
-            joint2a = np.pi / 2
+            joint2Angle = np.pi / 2
         elif joint2Angle < -(np.pi / 2):
-            joint2a = -np.pi / 2
+            joint2Angle = -np.pi / 2
 
         difference = self.lastJoint2Angle - joint2Angle
         joint2Angle += difference / 2
 
         if joint2Angle > (np.pi / 2):
-            joint2a = np.pi / 2
+            joint2Angle = np.pi / 2
         elif joint2Angle < -(np.pi / 2):
-            joint2a = -np.pi / 2
+            joint2Angle = -np.pi / 2
 
         self.lastJoint2Angle = joint2Angle
         return joint2Angle
 
-    def callback(self, camera1data, camera2data):
+    def calcJoint3Angle(self, joints_pos, joint2Angle):
+        # orientation = np.array([0, 0, self.joints_pos_orig[0, 2] - 480])
+        # orientation = self.pixel2meter(orientation)
+
+        x = joints_pos[2, 0] - joints_pos[1, 0]
+        y = joints_pos[2, 1] - joints_pos[1, 1]
+        z = joints_pos[2, 2] - joints_pos[1, 2]
+        #x = joints_pos[2, 0] - orientation[0]
+        #y = joints_pos[2, 1] - orientation[1]
+        #z = joints_pos[2, 2] - orientation[2]
+        theta = joint2Angle * -1
+
+        xrot = np.array([x,
+                         y*np.cos(theta) - z*np.sin(theta),
+                         y*np.sin(theta) + z*np.cos(theta)])
+
+        print(joints_pos[2])
+        print(xrot + joints_pos[1])
+        print()
+
+        joint3Angle = np.arctan2(xrot[2], xrot[0]) - np.pi / 2
+        # joint3Angle = np.arctan2(joints_pos[2][2] - joints_pos[1][2] + 0.5, joints_pos[2][0] - joints_pos[1][0]) - np.pi / 2
+
+        if joint3Angle > (np.pi / 2):
+            joint3Angle = np.pi / 2
+        elif joint3Angle < -(np.pi / 2):
+            joint3Angle = -np.pi / 2
+
+        return -joint3Angle
+
+    def callback(self, camera1data, camera2data, realJoint2Angle):
         # recieve the position data from each image
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
+            actualJoint2Angle = realJoint2Angle.data
         except CvBridgeError as e:
             print(e)
 
+        np.set_printoptions(suppress=True)
         # print(joints_pos1, ",")
         # print(joints_pos2)
         # print()
         # merge the data into 3d position coordinates
-        joints_pos = self.calc3dCoords(joints_pos1, joints_pos2)
+        self.joints_pos_orig = self.calc3dCoords(joints_pos1, joints_pos2)
         # print(joints_pos)
         # make the coordinates relative to the unmoving yellow joint
-        joints_pos = self.makeRelative(joints_pos)
+        joints_pos = self.makeRelative(self.joints_pos_orig)
         # print(joints_pos)
         # make the coordinates in terms of meters
         joints_pos = self.pixel2meter(joints_pos)
+
+        # print(joints_pos)
 
         joint2Angle = self.calcJoint2Angle(joints_pos)
 
         self.joint2 = Float64()
         self.joint2.data = joint2Angle
 
-        #self.joint4 = Float64()
-        #self.joint4.data = self.calcAngle(joints_pos[2] - joints_pos[1], joints_pos[3] - joints_pos[2])
+        joint3Angle = self.calcJoint3Angle(joints_pos, joint2Angle)
+
+        self.joint3 = Float64()
+        self.joint3.data = joint3Angle
+
+        # self.joint4 = Float64()
+        # self.joint4.data = self.calcAngle(joints_pos[2] - joints_pos[1], joints_pos[3] - joints_pos[2])
 
         try:
             self.joint2_pub.publish(self.joint2)
-            #self.joint4_pub.publish(self.joint4)
+            self.joint3_pub.publish(self.joint3)
+            # self.joint4_pub.publish(self.joint4)
         except CvBridgeError as e:
             print(e)
         return
