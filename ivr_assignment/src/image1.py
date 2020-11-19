@@ -5,7 +5,6 @@ import sys
 import rospy
 import cv2
 import numpy as np
-import imutils
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
@@ -75,8 +74,8 @@ class image_converter:
         orangeImg = cv2.bitwise_and(image, image, mask=orangeMask)
         orangeImg_grey = cv2.cvtColor(orangeImg, cv2.COLOR_BGR2GRAY)
         ret, thresh = cv2.threshold(orangeImg_grey, 127, 255, cv2.THRESH_BINARY)
-        contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = imutils.grab_contours(contours)
+        contours, hierarchy = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # contours = imutils.grab_contours(contours)
         cY, cZ = 0, 0
         for i in contours:
             shape = self.detect_shape(i)
