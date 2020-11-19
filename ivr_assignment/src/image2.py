@@ -76,6 +76,10 @@ class image_converter:
         for i in contours:
             shape = self.detect_shape(i)
             if shape == "circle":
+                (cX, cZ), radius = cv2.minEnclosingCircle(contours[0])
+                cv2.circle(self.cv_image2, (int(cX), int(cZ)), int(radius), (255, 255, 255), 1)
+                self.target_centre[0] = [cX, cZ, 0]
+                """
                 M = cv2.moments(i)
                 if M["m00"] != 0:
                     cX = int(M["m10"] / M["m00"])
@@ -84,6 +88,7 @@ class image_converter:
                 else:
                     cX, cZ = self.target_centre[0, :2]
                     self.target_centre[0] = [cX, cZ, 1]
+                """
         cv2.circle(self.cv_image2, (int(cX), int(cZ)), 1, (255, 255, 255), -1)
         return np.array([cX, cZ])
 
@@ -118,6 +123,7 @@ class image_converter:
         try:
             self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
             self.joints_pos2_pub.publish(self.js)
+            self.target_pos2_pub.publish(self.target)
         except CvBridgeError as e:
             print(e)
 

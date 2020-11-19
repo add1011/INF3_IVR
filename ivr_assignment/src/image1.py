@@ -21,12 +21,12 @@ class image_converter:
         self.image_pub1 = rospy.Publisher("image_topic1", Image, queue_size=1)
         # initialize a publisher to send joints' position to a topic called joints_pos1
         self.joints_pos1_pub = rospy.Publisher("joints_pos1", Float64MultiArray, queue_size=10)
+        # initialize a publisher to send position of target to a topic called target_pos1
+        self.target_pos1_pub = rospy.Publisher("target_pos1", Float64MultiArray, queue_size=10)
         # initialize a publisher to send joints' angular position to the robot
         self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
         self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
         self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
-        # initialize a publisher to send position of target to a topic called target_pos1
-        self.target_pos1_pub = rospy.Publisher("target_pos1", Float64MultiArray, queue_size=10)
         # initialize a subscriber to receive messages from a topic named /robot/camera1/image_raw and use callback function to receive data
         self.image_sub1 = rospy.Subscriber("/camera1/robot/image_raw", Image, self.callback1)
         # initialize the bridge between openCV and ROS
@@ -80,6 +80,10 @@ class image_converter:
         for i in contours:
             shape = self.detect_shape(i)
             if shape == "circle":
+                (cY, cZ), radius = cv2.minEnclosingCircle(contours[0])
+                cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (255, 255, 255), 1)
+                self.target_centre[0] = [cY, cZ, 0]
+                """
                 M = cv2.moments(i)
                 if M["m00"] != 0:
                     cY = int(M["m10"] / M["m00"])
@@ -88,6 +92,7 @@ class image_converter:
                 else:
                     cY, cZ = self.target_centre[0, :2]
                     self.target_centre[0] = [cY, cZ, 1]
+                """
         cv2.circle(self.cv_image1, (int(cY), int(cZ)), 1, (255, 255, 255), -1)
         return np.array([cY, cZ])
 

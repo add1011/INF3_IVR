@@ -18,8 +18,6 @@ class image_merger:
         # initialize the node named image_processing
         rospy.init_node('image_merger', anonymous=True)
 
-        self.target_pub = rospy.Publisher("target_pos", Float64, queue_size=10)
-
         self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
         self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
         self.joint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
@@ -29,13 +27,8 @@ class image_merger:
         # initialize a subscriber to receive messages from a topic named joints_pos2_sub
         self.joints_pos2_sub = message_filters.Subscriber("joints_pos2", Float64MultiArray)
 
-        # initialize a subscriber to receive messages from a topic named target_pos1
-        self.target_pos1_sub = message_filters.Subscriber("target_pos1", Float64MultiArray)
-        # initialize a subscriber to receive messages from a topic named target_pos2
-        self.target_pos2_sub = message_filters.Subscriber("target_pos2", Float64MultiArray)
-
         self.ts = message_filters.ApproximateTimeSynchronizer(
-            [self.joints_pos1_sub, self.joints_pos2_sub, self.target_pos1_sub, self.target_pos2_sub],
+            [self.joints_pos1_sub, self.joints_pos2_sub],
             queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
 
@@ -130,8 +123,6 @@ class image_merger:
         elif joint3Angle < -(np.pi / 2):
             joint3Angle = -np.pi / 2
 
-        print(-joint3Angle)
-
         return -joint3Angle
 
     def calcJoint4Angle(self, joint2Angle, joint3Angle):
@@ -146,7 +137,6 @@ class image_merger:
         z2 = self.joints_pos[3, 2] - orientation[2]
 
         theta = -joint2Angle
-        theta = -1
 
         #print(self.joints_pos[2:4])
         #print("-")
@@ -165,7 +155,6 @@ class image_merger:
         #print("-")
 
         theta = -joint3Angle
-        theta = 0
 
         xyrot1 = np.array([xrot1[0] * np.cos(theta) + xrot1[2] * np.sin(theta),
                            xrot1[1],
@@ -248,13 +237,11 @@ class image_merger:
         target_pos[0] = [x, y, z]
         return target_pos
 
-    def callback(self, camera1data, camera2data, target_data1, target_data2):
+    def callback(self, camera1data, camera2data):
         # recieve the position data from each image
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
-            target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1, 3)
-            target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1, 3)
         except CvBridgeError as e:
             print(e)
 
@@ -278,21 +265,13 @@ class image_merger:
         self.joint4 = Float64()
         self.joint4.data = joint4Angle
 
-        target_pos = self.target3Dcord(target_pos1, target_pos2)
-        target_pos = self.pixel2meter(target_pos)
-
-        self.target = Float64MultiArray
-        self.target.data = target_pos
-
         try:
             self.joint2_pub.publish(self.joint2)
             self.joint3_pub.publish(self.joint3)
             self.joint4_pub.publish(self.joint4)
-            self.target_pub(self.target)
         except CvBridgeError as e:
             print(e)
         return
-
 
 # call the class
 def main(args):
