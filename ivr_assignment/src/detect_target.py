@@ -19,6 +19,10 @@ class detect_target:
         rospy.init_node('detect_target', anonymous=True)
 
         self.target_pub = rospy.Publisher("target_pos", Float64MultiArray, queue_size=10)
+        self.targetx_pub = rospy.Publisher("target_xpos", Float64, queue_size=10)
+        self.targety_pub = rospy.Publisher("target_ypos", Float64, queue_size=10)
+        self.targetz_pub = rospy.Publisher("target_zpos", Float64, queue_size=10)
+
 
         # initialize a subscriber to receive messages from a topic named target_pos1
         self.target_pos1_sub = message_filters.Subscriber("target_pos1", Float64MultiArray)
@@ -39,7 +43,6 @@ class detect_target:
         return target_pos / 25.934213568650648
 
     def target3Dcord(self, target_pos1, target_pos2):
-        target_pos = np.zeros((1, 3))
         x = target_pos2[0, 0]
         y = target_pos1[0, 0]
         if target_pos1[0, 2] == 0 and target_pos2[0, 2] != 0:
@@ -48,7 +51,7 @@ class detect_target:
             z = target_pos2[0, 1]
         else:
             z = ((target_pos1[0, 1]+target_pos2[0, 1])/2)
-        target_pos[0] = [x, y, z]
+        target_pos = np.array([x, y, z], dtype='float64')
         return target_pos
 
     def callback(self, target_data1, target_data2):
@@ -62,10 +65,20 @@ class detect_target:
         target_pos = self.pixel2meter(target_pos)
 
         self.target = Float64MultiArray()
-        self.target.data = target_pos[0]
+        self.target.data = target_pos
+
+        self.targetx = Float64()
+        self.targetx.data = target_pos[0]
+        self.targety = Float64()
+        self.targety.data = target_pos[1]
+        self.targetz = Float64()
+        self.targetz.data = target_pos[2]
 
         try:
             self.target_pub.publish(self.target)
+            self.targetx_pub.publish(self.targetx)
+            self.targety_pub.publish(self.targety)
+            self.targetz_pub.publish(self.targetz)
         except CvBridgeError as e:
             print(e)
         return
