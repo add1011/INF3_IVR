@@ -27,6 +27,23 @@ class image_merger:
         self.targety_pub = rospy.Publisher("target_ypos", Float64, queue_size=10)
         self.targetz_pub = rospy.Publisher("target_zpos", Float64, queue_size=10)
 
+        self.visionx_pub = rospy.Publisher("visionee_xpos", Float64, queue_size=10)
+        self.visiony_pub = rospy.Publisher("visionee_ypos", Float64, queue_size=10)
+        self.visionz_pub = rospy.Publisher("visionee_zpos", Float64, queue_size=10)
+
+        self.FKx_pub = rospy.Publisher("FKee_xpos", Float64, queue_size=10)
+        self.FKy_pub = rospy.Publisher("FKee_ypos", Float64, queue_size=10)
+        self.FKz_pub = rospy.Publisher("FKee_zpos", Float64, queue_size=10)
+
+        self.targetx_pub = rospy.Publisher("target_xpos", Float64, queue_size=10)
+        self.targety_pub = rospy.Publisher("target_ypos", Float64, queue_size=10)
+        self.targetz_pub = rospy.Publisher("target_zpos", Float64, queue_size=10)
+
+        self.joint1_actual_sub = message_filters.Subscriber("/robot/joint1_position_controller/command", Float64)
+        self.joint2_actual_sub = message_filters.Subscriber("/robot/joint2_position_controller/command", Float64)
+        self.joint3_actual_sub = message_filters.Subscriber("/robot/joint3_position_controller/command", Float64)
+        self.joint4_actual_sub = message_filters.Subscriber("/robot/joint4_position_controller/command", Float64)
+
         # initialize a subscriber to receive messages from a topic named target_pos1
         self.target_pos1_sub = message_filters.Subscriber("target_pos1", Float64MultiArray)
         # initialize a subscriber to receive messages from a topic named target_pos2
@@ -38,7 +55,8 @@ class image_merger:
         self.joints_pos2_sub = message_filters.Subscriber("joints_pos2", Float64MultiArray)
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
-            [self.joints_pos1_sub, self.joints_pos2_sub, self.target_pos1_sub, self.target_pos2_sub],
+            [self.joints_pos1_sub, self.joints_pos2_sub, self.target_pos1_sub, self.target_pos2_sub,
+             self.joint1_actual_sub, self.joint2_actual_sub, self.joint3_actual_sub, self.joint4_actual_sub],
             queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
 
@@ -136,7 +154,10 @@ class image_merger:
         return -joint3Angle
 
     def calcJoint4Angle(self, joint2Angle, joint3Angle):
-        orientation = np.array([0, -0.00336898, 2.16924723])
+        if self.joints_pos[1, 1] < -0.00336898:
+            orientation = np.array([0, -0.00336898, 2.16924723])
+        else:
+            orientation = np.array([0, -0.00336898, 2.21869815])
 
         x1 = self.joints_pos[2, 0] - orientation[0]
         y1 = self.joints_pos[2, 1] - orientation[1]
@@ -146,40 +167,44 @@ class image_merger:
         y2 = self.joints_pos[3, 1] - orientation[1]
         z2 = self.joints_pos[3, 2] - orientation[2]
 
-        theta = -joint2Angle
+        theta = -joint3Angle
 
         # print(self.joints_pos[2:4])
         # print("-")
+        yrot1 = np.array([x1 * np.cos(theta) + z1 * np.sin(theta),
+                          y1,
+                          -x1 * np.sin(theta) + z1 * np.cos(theta)])
 
-        xrot1 = np.array([x1,
-                          y1 * np.cos(theta) - z1 * np.sin(theta),
-                          y1 * np.sin(theta) + z1 * np.cos(theta)])
+        # print(yrot1 + orientation)
 
-        # print(xrot1 + orientation)
+        yrot2 = np.array([x2 * np.cos(theta) + z2 * np.sin(theta),
+                          y2,
+                          -x2 * np.sin(theta) + z2 * np.cos(theta)])
 
-        xrot2 = np.array([x2,
-                          y2 * np.cos(theta) - z2 * np.sin(theta),
-                          y2 * np.sin(theta) + z2 * np.cos(theta)])
-
-        # print(xrot2 + orientation)
+        # print(yrot2 + orientation)
         # print("-")
 
-        theta = -joint3Angle
+        theta = -joint2Angle
 
-        xyrot1 = np.array([xrot1[0] * np.cos(theta) + xrot1[2] * np.sin(theta),
-                           xrot1[1],
-                           -xrot1[0] * np.sin(theta) + xrot1[2] * np.cos(theta)])
+        yxrot1 = np.array([yrot1[0],
+                           yrot1[1] * np.cos(theta) - yrot1[2] * np.sin(theta),
+                           yrot1[1] * np.sin(theta) + yrot1[2] * np.cos(theta)])
 
-        # print(xyrot1 + orientation)
+        yxrot1 += orientation
 
-        xyrot2 = np.array([xrot2[0] * np.cos(theta) + xrot2[2] * np.sin(theta),
-                           xrot2[1],
-                           -xrot2[0] * np.sin(theta) + xrot2[2] * np.cos(theta)])
+        yxrot2 = np.array([yrot2[0],
+                           yrot2[1] * np.cos(theta) - yrot2[2] * np.sin(theta),
+                           yrot2[1] * np.sin(theta) + yrot2[2] * np.cos(theta)])
 
-        # print(xyrot2 + orientation)
+        yxrot2 += orientation
+        # print(yrot2)
         # print("#####")
 
-        joint4Angle = np.arctan2(xyrot2[2] - xyrot1[2], xyrot2[0] - xyrot1[0])
+        joint4Angle = np.arctan2(yrot2[2] - yrot1[2], yrot2[1] - yrot1[1]) - joint2Angle
+        # joint4Angle = np.arctan2(yxrot2[2] - yxrot1[2], yxrot2[1] - yxrot1[1])
+
+        # joint4Angle = np.arctan2(self.joints_pos[3, 2] - self.joints_pos[2, 2],
+        #                         self.joints_pos[3, 1] - self.joints_pos[2, 1])
 
         if joint4Angle < -np.pi / 2:
             joint4Angle = np.pi / 2
@@ -193,58 +218,80 @@ class image_merger:
         elif joint4Angle < -(np.pi / 2):
             joint4Angle = -np.pi / 2
 
-        return -joint4Angle
+        return joint4Angle
 
     def forwardKinematics(self, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
         d = 2.5
-        theta = 90
+        theta1 = joint1Angle + np.deg2rad(90)
         a = 0
-        alpha = 90
+        alpha = np.deg2rad(90)
         joint1FK = np.array(
-            [[np.cos(theta), -np.sin(theta) * np.cos(alpha), np.sin(theta) * np.sin(alpha), a * np.cos(theta)],
-             [np.sin(theta), np.cos(theta) * np.cos(alpha), -np.cos(theta) * np.sin(alpha), a * np.sin(theta)],
+            [[np.cos(theta1), -np.sin(theta1) * np.cos(alpha), np.sin(theta1) * np.sin(alpha), a * np.cos(theta1)],
+             [np.sin(theta1), np.cos(theta1) * np.cos(alpha), -np.cos(theta1) * np.sin(alpha), a * np.sin(theta1)],
              [0, np.sin(alpha), np.cos(alpha), d],
              [0, 0, 0, 1]])
+
+        # print(joint1FK)
 
         d = 0
-        theta = 90
+        theta2 = joint2Angle + np.deg2rad(90)
         a = 0
-        alpha = 90
+        alpha = np.deg2rad(90)
         joint2FK = np.array(
-            [[np.cos(theta), -np.sin(theta) * np.cos(alpha), np.sin(theta) * np.sin(alpha), a * np.cos(theta)],
-             [np.sin(theta), np.cos(theta) * np.cos(alpha), -np.cos(theta) * np.sin(alpha), a * np.sin(theta)],
+            [[np.cos(theta2), -np.sin(theta2) * np.cos(alpha), np.sin(theta2) * np.sin(alpha), a * np.cos(theta2)],
+             [np.sin(theta2), np.cos(theta2) * np.cos(alpha), -np.cos(theta2) * np.sin(alpha), a * np.sin(theta2)],
              [0, np.sin(alpha), np.cos(alpha), d],
              [0, 0, 0, 1]])
 
-        d = 3.5
-        theta = 0
-        a = 0
-        alpha = 270
+        # print("-joint2FK-")
+        # print(joint2FK)
+        final = np.matmul(joint1FK, joint2FK)
+        # print(final)
+
+        d = 0
+        theta3 = joint3Angle
+        a = 3.5
+        alpha = np.deg2rad(270)
         joint3FK = np.array(
-            [[np.cos(theta), -np.sin(theta) * np.cos(alpha), np.sin(theta) * np.sin(alpha), a * np.cos(theta)],
-             [np.sin(theta), np.cos(theta) * np.cos(alpha), -np.cos(theta) * np.sin(alpha), a * np.sin(theta)],
+            [[np.cos(theta3), -np.sin(theta3) * np.cos(alpha), np.sin(theta3) * np.sin(alpha), a * np.cos(theta3)],
+             [np.sin(theta3), np.cos(theta3) * np.cos(alpha), -np.cos(theta3) * np.sin(alpha), a * np.sin(theta3)],
              [0, np.sin(alpha), np.cos(alpha), d],
              [0, 0, 0, 1]])
 
-        d = 3
-        theta = 0
-        a = 0
-        alpha = 0
+        # print("-joint3FK-")
+        # print(joint3FK)
+        final = np.matmul(final, joint3FK)
+        # print(final)
+
+        d = 0
+        theta4 = joint4Angle
+        a = 3
+        alpha = np.deg2rad(0)
         joint4FK = np.array(
-            [[np.cos(theta), -np.sin(theta) * np.cos(alpha), np.sin(theta) * np.sin(alpha), a * np.cos(theta)],
-             [np.sin(theta), np.cos(theta) * np.cos(alpha), -np.cos(theta) * np.sin(alpha), a * np.sin(theta)],
+            [[np.cos(theta4), -np.sin(theta4) * np.cos(alpha), np.sin(theta4) * np.sin(alpha), a * np.cos(theta4)],
+             [np.sin(theta4), np.cos(theta4) * np.cos(alpha), -np.cos(theta4) * np.sin(alpha), a * np.sin(theta4)],
              [0, np.sin(alpha), np.cos(alpha), d],
              [0, 0, 0, 1]])
 
-        return
+        # print("-joint4FK-")
+        # print(joint4FK)
+        final = np.matmul(final, joint4FK)
+        # print(final)
 
-    def callback(self, camera1data, camera2data, target_data1, target_data2):
+        return final[0:3, 3]
+
+    def callback(self, camera1data, camera2data, target_data1, target_data2, joint1_actual, joint2_actual,
+                 joint3_actual, joint4_actual):
         # recieve the position data from each image
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
             target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1, 3)
             target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1, 3)
+            joint1Actual = joint1_actual.data
+            joint2Actual = joint2_actual.data
+            joint3Actual = joint3_actual.data
+            joint4Actual = joint4_actual.data
         except CvBridgeError as e:
             print(e)
 
@@ -265,13 +312,13 @@ class image_merger:
         self.joint3 = Float64()
         self.joint3.data = joint3Angle
 
-        joint4Angle = self.calcJoint4Angle(joint2Angle, joint3Angle)
+        joint4Angle = self.calcJoint4Angle(joint2Actual, joint3Actual)
         self.joint4 = Float64()
         self.joint4.data = joint4Angle
 
         ######################## TARGET DETECTION ########################
         target_pos = self.calc3dCoords(target_pos1, target_pos2)
-        target_pos = self.makeRelative(target_pos)
+        # target_pos = self.makeRelative(target_pos)
         target_pos = self.pixel2meter(target_pos)
         self.targetx = Float64()
         self.targetx.data = target_pos[0, 0]
@@ -279,6 +326,17 @@ class image_merger:
         self.targety.data = target_pos[0, 1]
         self.targetz = Float64()
         self.targetz.data = target_pos[0, 2]
+
+        ######################## FORWARD KINEMATICS ########################
+        endEffector = self.forwardKinematics(joint1Actual, joint2Actual, joint3Actual, joint4Actual)
+        print(endEffector)
+
+        self.fkEndEffectorx = endEffector[0]
+        self.fkEndEffectory = endEffector[1]
+        self.fkEndEffectorz = endEffector[2]
+
+        print(self.joints_pos)
+        print()
 
         try:
             self.targetx_pub.publish(self.targetx)
@@ -288,6 +346,15 @@ class image_merger:
             self.joint2_pub.publish(self.joint2)
             self.joint3_pub.publish(self.joint3)
             self.joint4_pub.publish(self.joint4)
+
+            self.visionx_pub.publish(self.joints_pos[3, 0])
+            self.visiony_pub.publish(self.joints_pos[3, 1])
+            self.visionz_pub.publish(self.joints_pos[3, 2])
+
+            self.FKx_pub.publish(self.fkEndEffectorx)
+            self.FKy_pub.publish(self.fkEndEffectory)
+            self.FKz_pub.publish(self.fkEndEffectorz)
+
         except CvBridgeError as e:
             print(e)
         return
