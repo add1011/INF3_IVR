@@ -278,6 +278,11 @@ class image_merger:
         final = np.matmul(final, joint4FK)
         # print(final)
 
+        # xx = 3 * (np.sin(theta1) * np.sin(theta2) * np.cos(theta3) + np.sin(theta3) * np.cos(theta4)) * np.cos(theta1) + \
+        #      3 * np.sin(theta4) * np.sin(theta1) * np.cos(theta2) + \
+        #      3.5 * np.sin(theta1) * np.sin(theta2) * np.cos(theta3) + \
+        #      3.5 * np.sin(theta3) * np.cos(theta1)
+
         return final[0:3, 3]
 
     def callback(self, camera1data, camera2data, target_data1, target_data2, joint1_actual, joint2_actual,
@@ -321,22 +326,21 @@ class image_merger:
         # target_pos = self.makeRelative(target_pos)
         target_pos = self.pixel2meter(target_pos)
         self.targetx = Float64()
-        self.targetx.data = target_pos[0, 0]
+        self.targetx.data = target_pos[0, 0] - 15.35
         self.targety = Float64()
-        self.targety.data = target_pos[0, 1]
+        self.targety.data = target_pos[0, 1] - 15.35
         self.targetz = Float64()
         self.targetz.data = target_pos[0, 2]
 
         ######################## FORWARD KINEMATICS ########################
         endEffector = self.forwardKinematics(joint1Actual, joint2Actual, joint3Actual, joint4Actual)
-        print(endEffector)
+        #print(endEffector)
 
         self.fkEndEffectorx = endEffector[0]
         self.fkEndEffectory = endEffector[1]
         self.fkEndEffectorz = endEffector[2]
 
-        print(self.joints_pos)
-        print()
+        #print(self.joints_pos)
 
         try:
             self.targetx_pub.publish(self.targetx)
