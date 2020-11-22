@@ -92,7 +92,7 @@ class image_merger:
 
     def pixel2meter(self, joints_pos):
         # use last two joints as the distance between them will always be the same
-        # metreInPixels = (np.linalg.norm(joints_pos[0] - joints_pos[1])) / 2.5
+        # metreInPixels = (np.linalg.norm(joints_pos[2] - joints_pos[3])) / 3
         return joints_pos / 25.934213568650648
 
     def calcJoint2Angle(self):
@@ -221,69 +221,30 @@ class image_merger:
         return joint4Angle
 
     def forwardKinematics(self, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
-        d = 2.5
-        theta1 = joint1Angle + np.deg2rad(90)
-        a = 0
-        alpha = np.deg2rad(90)
-        joint1FK = np.array(
-            [[np.cos(theta1), -np.sin(theta1) * np.cos(alpha), np.sin(theta1) * np.sin(alpha), a * np.cos(theta1)],
-             [np.sin(theta1), np.cos(theta1) * np.cos(alpha), -np.cos(theta1) * np.sin(alpha), a * np.sin(theta1)],
-             [0, np.sin(alpha), np.cos(alpha), d],
-             [0, 0, 0, 1]])
-
-        # print(joint1FK)
-
-        d = 0
-        theta2 = joint2Angle + np.deg2rad(90)
-        a = 0
-        alpha = np.deg2rad(90)
-        joint2FK = np.array(
-            [[np.cos(theta2), -np.sin(theta2) * np.cos(alpha), np.sin(theta2) * np.sin(alpha), a * np.cos(theta2)],
-             [np.sin(theta2), np.cos(theta2) * np.cos(alpha), -np.cos(theta2) * np.sin(alpha), a * np.sin(theta2)],
-             [0, np.sin(alpha), np.cos(alpha), d],
-             [0, 0, 0, 1]])
-
-        # print("-joint2FK-")
-        # print(joint2FK)
-        final = np.matmul(joint1FK, joint2FK)
-        # print(final)
-
-        d = 0
+        theta1 = joint1Angle
+        theta2 = joint2Angle
         theta3 = joint3Angle
-        a = 3.5
-        alpha = np.deg2rad(270)
-        joint3FK = np.array(
-            [[np.cos(theta3), -np.sin(theta3) * np.cos(alpha), np.sin(theta3) * np.sin(alpha), a * np.cos(theta3)],
-             [np.sin(theta3), np.cos(theta3) * np.cos(alpha), -np.cos(theta3) * np.sin(alpha), a * np.sin(theta3)],
-             [0, np.sin(alpha), np.cos(alpha), d],
-             [0, 0, 0, 1]])
-
-        # print("-joint3FK-")
-        # print(joint3FK)
-        final = np.matmul(final, joint3FK)
-        # print(final)
-
-        d = 0
         theta4 = joint4Angle
-        a = 3
-        alpha = np.deg2rad(0)
-        joint4FK = np.array(
-            [[np.cos(theta4), -np.sin(theta4) * np.cos(alpha), np.sin(theta4) * np.sin(alpha), a * np.cos(theta4)],
-             [np.sin(theta4), np.cos(theta4) * np.cos(alpha), -np.cos(theta4) * np.sin(alpha), a * np.sin(theta4)],
-             [0, np.sin(alpha), np.cos(alpha), d],
-             [0, 0, 0, 1]])
 
-        # print("-joint4FK-")
-        # print(joint4FK)
-        final = np.matmul(final, joint4FK)
-        # print(final)
+        xx = 3 * (np.sin(joint3Angle) * np.sin(joint1Angle + np.pi/2) + \
+             np.cos(joint3Angle) * np.cos(joint1Angle + np.pi/2) * np.cos(joint2Angle + np.pi/2)) * np.cos(joint4Angle) + \
+             7 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi/2) / 2 - \
+             3 * np.sin(joint4Angle) * np.sin(joint2Angle + np.pi/2) * np.cos(joint1Angle + np.pi/2) + \
+             7 * np.cos(joint3Angle) * np.cos(joint1Angle + np.pi/2) * np.cos(joint2Angle + np.pi/2) / 2
 
-        # xx = 3 * (np.sin(theta1) * np.sin(theta2) * np.cos(theta3) + np.sin(theta3) * np.cos(theta4)) * np.cos(theta1) + \
-        #      3 * np.sin(theta4) * np.sin(theta1) * np.cos(theta2) + \
-        #      3.5 * np.sin(theta1) * np.sin(theta2) * np.cos(theta3) + \
-        #      3.5 * np.sin(theta3) * np.cos(theta1)
+        yy = 3*(-np.sin(joint3Angle)*np.cos(joint1Angle + np.pi/2) +
+             np.sin(joint1Angle + np.pi/2)*np.cos(joint3Angle)*np.cos(joint2Angle + \
+             np.pi/2))*np.cos(joint4Angle) - \
+             7*np.sin(joint3Angle)*np.cos(joint1Angle + np.pi/2)/2 - \
+             3*np.sin(joint4Angle)*np.sin(joint1Angle + np.pi/2)*np.sin(joint2Angle + np.pi/2) + \
+             7*np.sin(joint1Angle + np.pi/2)*np.cos(joint3Angle)*np.cos(joint2Angle + np.pi/2)/2
 
-        return final[0:3, 3]
+        zz = 3*np.sin(joint4Angle)*np.cos(joint2Angle + np.pi/2) + \
+             3*np.sin(joint2Angle + np.pi/2)*np.cos(joint3Angle)*np.cos(joint4Angle) + \
+             7*np.sin(joint2Angle + np.pi/2)*np.cos(joint3Angle)/2 + \
+             5/2
+
+        return np.array([xx, yy, zz])
 
     def callback(self, camera1data, camera2data, target_data1, target_data2, joint1_actual, joint2_actual,
                  joint3_actual, joint4_actual):
@@ -334,13 +295,14 @@ class image_merger:
 
         ######################## FORWARD KINEMATICS ########################
         endEffector = self.forwardKinematics(joint1Actual, joint2Actual, joint3Actual, joint4Actual)
-        #print(endEffector)
+        # print(endEffector)
 
         self.fkEndEffectorx = endEffector[0]
         self.fkEndEffectory = endEffector[1]
         self.fkEndEffectorz = endEffector[2]
 
-        #print(self.joints_pos)
+
+        # print(self.joints_pos)
 
         try:
             self.targetx_pub.publish(self.targetx)
