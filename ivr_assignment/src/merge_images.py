@@ -39,11 +39,22 @@ class image_merger:
         self.targety_pub = rospy.Publisher("target_ypos", Float64, queue_size=10)
         self.targetz_pub = rospy.Publisher("target_zpos", Float64, queue_size=10)
 
+        # initialize a publisher to send joints' angular position to the robot
+        self.robot_joint1_pub = rospy.Publisher("/robot/joint1_position_controller/command", Float64, queue_size=10)
+        self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
+        self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
+        self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
+
+        self.targetx_actual_sub = message_filters.Subscriber("/target/x_position_controller/command", Float64)
+        self.targety_actual_sub = message_filters.Subscriber("/target/y_position_controller/command", Float64)
+        self.targetz_actual_sub = message_filters.Subscriber("/target/z_position_controller/command", Float64)
+
+        """"
         self.joint1_actual_sub = message_filters.Subscriber("/robot/joint1_position_controller/command", Float64)
         self.joint2_actual_sub = message_filters.Subscriber("/robot/joint2_position_controller/command", Float64)
         self.joint3_actual_sub = message_filters.Subscriber("/robot/joint3_position_controller/command", Float64)
         self.joint4_actual_sub = message_filters.Subscriber("/robot/joint4_position_controller/command", Float64)
-
+        """
         # initialize a subscriber to receive messages from a topic named target_pos1
         self.target_pos1_sub = message_filters.Subscriber("target_pos1", Float64MultiArray)
         # initialize a subscriber to receive messages from a topic named target_pos2
@@ -56,14 +67,27 @@ class image_merger:
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.joints_pos1_sub, self.joints_pos2_sub, self.target_pos1_sub, self.target_pos2_sub,
-             self.joint1_actual_sub, self.joint2_actual_sub, self.joint3_actual_sub, self.joint4_actual_sub],
+             #self.joint1_actual_sub, self.joint2_actual_sub, self.joint3_actual_sub, self.joint4_actual_sub,
+             self.targetx_actual_sub, self.targety_actual_sub, self.targetz_actual_sub],
             queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
 
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
+        self.lastJoint1Angle = 0
         self.lastJoint2Angle = 0
+        self.lastJoint3Angle = 0
+        self.lastJoint4Angle = 0
+
+        # record the begining time
+        self.time_trajectory = rospy.get_time()
+        # initialize errors
+        self.time_previous_step = np.array([rospy.get_time()], dtype='float64')
+        self.time_previous_step2 = np.array([rospy.get_time()], dtype='float64')
+        # initialize error and derivative of error for trajectory tracking
+        self.error = np.array([0.0, 0.0, 0.0], dtype='float64')
+        self.error_d = np.array([0.0, 0.0, 0.0], dtype='float64')
 
     def calc3dCoords(self, source1, source2):
         coords3d = np.zeros((source1.shape[0], 3))
@@ -221,43 +245,146 @@ class image_merger:
         return joint4Angle
 
     def forwardKinematics(self, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
-        theta1 = joint1Angle
-        theta2 = joint2Angle
-        theta3 = joint3Angle
-        theta4 = joint4Angle
+        x = 3 * (np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) + np.cos(joint3Angle) * np.cos(
+            joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2)) * np.cos(joint4Angle) + \
+            7 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) / 2 - \
+            3 * np.sin(joint4Angle) * np.sin(joint2Angle + np.pi / 2) * np.cos(joint1Angle + np.pi / 2) + \
+            7 * np.cos(joint3Angle) * np.cos(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) / 2
 
-        xx = 3 * (np.sin(joint3Angle) * np.sin(joint1Angle + np.pi/2) + \
-             np.cos(joint3Angle) * np.cos(joint1Angle + np.pi/2) * np.cos(joint2Angle + np.pi/2)) * np.cos(joint4Angle) + \
-             7 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi/2) / 2 - \
-             3 * np.sin(joint4Angle) * np.sin(joint2Angle + np.pi/2) * np.cos(joint1Angle + np.pi/2) + \
-             7 * np.cos(joint3Angle) * np.cos(joint1Angle + np.pi/2) * np.cos(joint2Angle + np.pi/2) / 2
+        """
+        xx = 3 * (sympy.sin(t3) * sympy.sin(sympy.Add(t1 + np.pi / 2)) + sympy.cos(t3) * sympy.cos(
+            sympy.Add(t1 + np.pi / 2)) * sympy.cos(sympy.Add(t2 + np.pi / 2))) * sympy.cos(t4) + \
+            7 * sympy.sin(t3) * sympy.sin(sympy.Add(t1 + np.pi / 2)) / 2 - \
+            3 * sympy.sin(t4) * sympy.sin(sympy.Add(t2 + np.pi / 2)) * sympy.cos(sympy.Add(t1 + np.pi / 2)) + \
+            7 * sympy.cos(t3) * sympy.cos(sympy.Add(t1 + np.pi / 2)) * sympy.cos(sympy.Add(t2 + np.pi / 2)) / 2
+        """
 
-        yy = 3*(-np.sin(joint3Angle)*np.cos(joint1Angle + np.pi/2) +
-             np.sin(joint1Angle + np.pi/2)*np.cos(joint3Angle)*np.cos(joint2Angle + \
-             np.pi/2))*np.cos(joint4Angle) - \
-             7*np.sin(joint3Angle)*np.cos(joint1Angle + np.pi/2)/2 - \
-             3*np.sin(joint4Angle)*np.sin(joint1Angle + np.pi/2)*np.sin(joint2Angle + np.pi/2) + \
-             7*np.sin(joint1Angle + np.pi/2)*np.cos(joint3Angle)*np.cos(joint2Angle + np.pi/2)/2
+        y = 3 * (-np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) + np.sin(joint1Angle + np.pi / 2) * np.cos(
+            joint3Angle) * np.cos(joint2Angle + np.pi / 2)) * np.cos(joint4Angle) - \
+            7 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) / 2 - \
+            3 * np.sin(joint4Angle) * np.sin(joint1Angle + np.pi / 2) * np.sin(joint2Angle + np.pi / 2) + \
+            7 * np.sin(joint1Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint2Angle + np.pi / 2) / 2
 
-        zz = 3*np.sin(joint4Angle)*np.cos(joint2Angle + np.pi/2) + \
-             3*np.sin(joint2Angle + np.pi/2)*np.cos(joint3Angle)*np.cos(joint4Angle) + \
-             7*np.sin(joint2Angle + np.pi/2)*np.cos(joint3Angle)/2 + \
-             5/2
+        """
+        yy = 3 * (-sympy.sin(joint3Angle) * sympy.cos(sympy.Add(joint1Angle + np.pi / 2)) + sympy.sin(
+            sympy.Add(joint1Angle + np.pi / 2)) * sympy.cos(
+            joint3Angle) * sympy.cos(sympy.Add(joint2Angle + np.pi / 2))) * sympy.cos(joint4Angle) - \
+             7 * sympy.sin(joint3Angle) * sympy.cos(sympy.Add(joint1Angle + np.pi / 2)) / 2 - \
+             3 * sympy.sin(joint4Angle) * sympy.sin(sympy.Add(joint1Angle + np.pi / 2)) * sympy.sin(
+            sympy.Add(joint2Angle + np.pi / 2)) + \
+             7 * sympy.sin(sympy.Add(joint1Angle + np.pi / 2)) * sympy.cos(joint3Angle) * sympy.cos(
+            sympy.Add(joint2Angle + np.pi / 2)) / 2
+        """
 
-        return np.array([xx, yy, zz])
+        z = 3 * np.sin(joint4Angle) * np.cos(joint2Angle + np.pi / 2) + \
+            3 * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint4Angle) + \
+            7 * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) / 2 + \
+            5 / 2
 
-    def callback(self, camera1data, camera2data, target_data1, target_data2, joint1_actual, joint2_actual,
-                 joint3_actual, joint4_actual):
+        """
+        zz = 3 * sympy.sin(joint4Angle) * sympy.cos(sympy.Add(joint2Angle + np.pi / 2)) + \
+             3 * sympy.sin(sympy.Add(joint2Angle + np.pi / 2)) * sympy.cos(joint3Angle) * sympy.cos(joint4Angle) + \
+             7 * sympy.sin(sympy.Add(joint2Angle + np.pi / 2)) * sympy.cos(joint3Angle) / 2 + \
+             5 / 2
+        """
+
+        return np.array([x, y, z])
+
+    def calcJacobian(self, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
+
+        x1 = (3 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) - 3 * np.sin(joint1Angle + np.pi / 2) * np.cos(
+            joint3Angle) * np.cos(joint2Angle + np.pi / 2)) * np.cos(joint4Angle) + \
+             7 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) / 2 + 3 * np.sin(joint4Angle) * np.sin(
+            joint1Angle + np.pi / 2) * np.sin(joint2Angle + np.pi / 2) - \
+             7 * np.sin(joint1Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint2Angle + np.pi / 2) / 2
+
+        x2 = -3 * np.sin(joint4Angle) * np.cos(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) - \
+             3 * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint4Angle) * np.cos(
+            joint1Angle + np.pi / 2) - \
+             7 * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint1Angle + np.pi / 2) / 2
+
+        x3 = (-3 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) + 3 * np.sin(
+            joint1Angle + np.pi / 2) * np.cos(joint3Angle)) * np.cos(joint4Angle) - \
+             7 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) / 2 + \
+             7 * np.sin(joint1Angle + np.pi / 2) * np.cos(joint3Angle) / 2
+
+        x4 = -(3 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) + 3 * np.cos(joint3Angle) * np.cos(
+            joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2)) * np.sin(joint4Angle) - \
+             3 * np.sin(joint2Angle + np.pi / 2) * np.cos(joint4Angle) * np.cos(joint1Angle + np.pi / 2)
+
+        y1 = (3 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) + 3 * np.cos(joint3Angle) * np.cos(
+            joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2)) * np.cos(joint4Angle) + \
+             7 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) / 2 - \
+             3 * np.sin(joint4Angle) * np.sin(joint2Angle + np.pi / 2) * np.cos(joint1Angle + np.pi / 2) + \
+             7 * np.cos(joint3Angle) * np.cos(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) / 2
+
+        y2 = -3 * np.sin(joint4Angle) * np.sin(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) - \
+             3 * np.sin(joint1Angle + np.pi / 2) * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(
+            joint4Angle) - \
+             7 * np.sin(joint1Angle + np.pi / 2) * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) / 2
+
+        y3 = (-3 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) - 3 * np.cos(
+            joint3Angle) * np.cos(joint1Angle + np.pi / 2)) * np.cos(joint4Angle) - \
+             7 * np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) / 2 - \
+             7 * np.cos(joint3Angle) * np.cos(joint1Angle + np.pi / 2) / 2
+
+        y4 = -(-3 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) + 3 * np.sin(
+            joint1Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint2Angle + np.pi / 2)) * np.sin(joint4Angle) - \
+             3 * np.sin(joint1Angle + np.pi / 2) * np.sin(joint2Angle + np.pi / 2) * np.cos(joint4Angle)
+
+        z1 = 0
+
+        z2 = -3*np.sin(joint4Angle)*np.sin(joint2Angle + np.pi / 2) + \
+             3*np.cos(joint3Angle)*np.cos(joint4Angle)*np.cos(joint2Angle + np.pi / 2) + \
+             7*np.cos(joint3Angle)*np.cos(joint2Angle + np.pi / 2)/2
+
+        z3 = -3*np.sin(joint3Angle)*np.sin(joint2Angle + np.pi / 2)*np.cos(joint4Angle) - \
+             7*np.sin(joint3Angle)*np.sin(joint2Angle + np.pi / 2)/2
+
+        z4 = -3*np.sin(joint4Angle)*np.sin(joint2Angle + np.pi / 2)*np.cos(joint3Angle) + \
+             3*np.cos(joint4Angle)*np.cos(joint2Angle + np.pi / 2)
+
+        jacobian = np.array([[x1, x2, x3, x4],
+                             [y1, y2, y3, y4],
+                             [z1, z2, z3, z4]])
+
+        return jacobian
+
+    def control_closed(self, ee, ee_d, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
+        # P gain
+        K_p = np.array([[10, 0, 0], [0, 10, 0], [0, 0, 10]])
+        # D gain
+        K_d = np.array([[0.1, 0, 0], [0, 0.1, 0], [0, 0, 0.1]])
+        # estimate time step
+        cur_time = np.array([rospy.get_time()])
+        dt = cur_time - self.time_previous_step
+        self.time_previous_step = cur_time
+        # estimate derivative of error
+        self.error_d = ((ee_d - ee) - self.error) / dt
+        # estimate error
+        self.error = ee_d - ee
+        J_inv = np.linalg.pinv(self.calcJacobian(joint1Angle, joint2Angle, joint3Angle, joint4Angle))  # calculating the psudeo inverse of Jacobian
+        dq_d = np.dot(J_inv, (np.dot(K_d, self.error_d.transpose()) + np.dot(K_p,
+                                                                             self.error.transpose())))  # control input (angular velocity of joints)
+        q_d = np.array([joint1Angle, joint2Angle, joint3Angle, joint4Angle]) + (dt * dq_d)  # control input (angular position of joints)
+        return q_d
+
+    def callback(self, camera1data, camera2data, target_data1, target_data2,
+                 #joint1_actual, joint2_actual, joint3_actual, joint4_actual,
+                 targetx_actual, targety_actual, targetz_actual):
         # recieve the position data from each image
         try:
             joints_pos1 = np.asarray(camera1data.data, dtype='float64').reshape(4, 3)
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
             target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1, 3)
             target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1, 3)
-            joint1Actual = joint1_actual.data
-            joint2Actual = joint2_actual.data
-            joint3Actual = joint3_actual.data
-            joint4Actual = joint4_actual.data
+            # joint1Actual = joint1_actual.data
+            # joint2Actual = joint2_actual.data
+            # joint3Actual = joint3_actual.data
+            # joint4Actual = joint4_actual.data
+            tx = targetx_actual.data
+            ty = targety_actual.data
+            tz = targetz_actual.data
         except CvBridgeError as e:
             print(e)
 
@@ -278,7 +405,7 @@ class image_merger:
         self.joint3 = Float64()
         self.joint3.data = joint3Angle
 
-        joint4Angle = self.calcJoint4Angle(joint2Actual, joint3Actual)
+        joint4Angle = self.calcJoint4Angle(joint2Angle, joint3Angle)
         self.joint4 = Float64()
         self.joint4.data = joint4Angle
 
@@ -293,16 +420,33 @@ class image_merger:
         self.targetz = Float64()
         self.targetz.data = target_pos[0, 2]
 
-        ######################## FORWARD KINEMATICS ########################
-        endEffector = self.forwardKinematics(joint1Actual, joint2Actual, joint3Actual, joint4Actual)
+        ######################## CONTROL ########################
+        endEffector = self.forwardKinematics(self.lastJoint1Angle, self.lastJoint2Angle, self.lastJoint3Angle, self.lastJoint4Angle)
         # print(endEffector)
 
         self.fkEndEffectorx = endEffector[0]
         self.fkEndEffectory = endEffector[1]
         self.fkEndEffectorz = endEffector[2]
 
-
         # print(self.joints_pos)
+
+        q_d = self.control_closed(endEffector, np.array([tx, ty, tz]), self.lastJoint1Angle, self.lastJoint2Angle, self.lastJoint3Angle, self.lastJoint4Angle)
+
+        print(q_d)
+
+        self.joint1 = Float64()
+        self.joint1.data = q_d[0]
+        self.joint2 = Float64()
+        self.joint2.data = q_d[1]
+        self.joint3 = Float64()
+        self.joint3.data = q_d[2]
+        self.joint4 = Float64()
+        self.joint4.data = q_d[3]
+
+        self.lastJoint1Angle = q_d[0]
+        self.lastJoint2Angle = q_d[1]
+        self.lastJoint3Angle = q_d[2]
+        self.lastJoint4Angle = q_d[3]
 
         try:
             self.targetx_pub.publish(self.targetx)
@@ -320,6 +464,11 @@ class image_merger:
             self.FKx_pub.publish(self.fkEndEffectorx)
             self.FKy_pub.publish(self.fkEndEffectory)
             self.FKz_pub.publish(self.fkEndEffectorz)
+
+            self.robot_joint1_pub.publish(self.joint1)
+            self.robot_joint2_pub.publish(self.joint2)
+            self.robot_joint3_pub.publish(self.joint3)
+            self.robot_joint4_pub.publish(self.joint4)
 
         except CvBridgeError as e:
             print(e)
