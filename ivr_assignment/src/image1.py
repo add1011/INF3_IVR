@@ -70,12 +70,10 @@ class image_converter:
         contour = contours[0]
         bestCircularity = 0
         for c in contours:
-            if cv2.arcLength(c, True) != 0:
-                circularity = (4*np.pi*cv2.contourArea(c))/(cv2.arcLength(c, True)**2)
-            else:
-                circularity = 0
             (cY, cZ), radius = cv2.minEnclosingCircle(c)
-            if circularity > bestCircularity:# and np.linalg.norm(np.array([cY, cZ]) - np.array([self.target_centre[0, 0], self.target_centre[0, 1]])) < 50:
+            cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (0, 0, 0), 1)
+            circularity = (4 * np.pi * cv2.contourArea(c)) / (np.pi*radius*2) ** 2
+            if circularity > bestCircularity and not (0.5 < circularity < 0.55):
                 bestCircularity = circularity
                 contour = c
 
