@@ -43,7 +43,13 @@ class image_converter:
         ret, thresh = cv2.threshold(img_grey, 1, 255, 0)
         contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         if contours:
-            (cX, cZ), radius = cv2.minEnclosingCircle(contours[0])
+            # select the largest area if the joint is split by an obstruction
+            contour = contours[0]
+            largestArea = 0
+            for c in contours:
+                if cv2.contourArea(c) > largestArea:
+                    contour = c
+            (cX, cZ), radius = cv2.minEnclosingCircle(contour)
             cv2.circle(self.cv_image2, (int(cX), int(cZ)), int(radius), (255, 255, 255), 1)
             self.joint_momentums[jointIndex] = np.subtract([cX, cZ], self.joint_centres[jointIndex, :2])
             self.joint_centres[jointIndex] = [cX, cZ, 0]

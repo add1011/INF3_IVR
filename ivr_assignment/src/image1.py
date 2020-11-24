@@ -48,7 +48,13 @@ class image_converter:
         ret, thresh = cv2.threshold(img_grey, 1, 255, 0)
         contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         if contours:
-            (cY, cZ), radius = cv2.minEnclosingCircle(contours[0])
+            # select the largest area if the joint is split by an obstruction
+            contour = contours[0]
+            largestArea = 0
+            for c in contours:
+                if cv2.contourArea(c) > largestArea:
+                    contour = c
+            (cY, cZ), radius = cv2.minEnclosingCircle(contour)
             cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (255, 255, 255), 1)
             # self.joint_momentums[jointIndex] = np.subtract([cY, cZ], self.joint_centres[jointIndex, :2])
             self.joint_centres[jointIndex] = [cY, cZ, 0]
@@ -71,8 +77,10 @@ class image_converter:
         bestCircularity = 0
         for c in contours:
             (cY, cZ), radius = cv2.minEnclosingCircle(c)
+            area = cv2.contourArea(c)
+            perimeter = np.pi*radius*2
             cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (0, 0, 0), 1)
-            circularity = (4 * np.pi * cv2.contourArea(c)) / (np.pi*radius*2) ** 2
+            circularity = (4 * np.pi * area) / perimeter ** 2
             if circularity > bestCircularity and not (0.5 < circularity < 0.55):
                 bestCircularity = circularity
                 contour = c
