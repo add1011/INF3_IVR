@@ -24,6 +24,7 @@ class image_converter:
         # initialize a publisher to send position of target to a topic called target_pos1
         self.target_pos1_pub = rospy.Publisher("target_pos1", Float64MultiArray, queue_size=10)
         # initialize a publisher to send joints' angular position to the robot
+        self.robot_joint1_pub = rospy.Publisher("/robot/joint1_position_controller/command", Float64, queue_size=10)
         self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
         self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
         self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
@@ -59,40 +60,29 @@ class image_converter:
         cv2.circle(self.cv_image1, (int(cY), int(cZ)), 2, (255, 255, 255), -1)
         return
 
-    def detect_shape(self, c):
-        shape = "unidentified"
-        perimeter = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.04 * perimeter, True)
-        if len(approx) == 4:
-            shape = "square"
-        else:
-            shape = "circle"
-        return shape
-
     def detect_target(self, image):
-        orangeMask = cv2.inRange(image, (5, 50, 50), (15, 255, 255))
+        orangeMask = cv2.inRange(image, (5, 50, 50), (20, 255, 255))
         orangeImg = cv2.bitwise_and(image, image, mask=orangeMask)
         orangeImg_grey = cv2.cvtColor(orangeImg, cv2.COLOR_BGR2GRAY)
         ret, thresh = cv2.threshold(orangeImg_grey, 127, 255, cv2.THRESH_BINARY)
         contours, hierarchy = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        # contours = imutils.grab_contours(contours)
-        cY, cZ = 0, 0
-        for i in contours:
-            shape = self.detect_shape(i)
-            if shape == "circle":
-                (cY, cZ), radius = cv2.minEnclosingCircle(contours[0])
-                cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (255, 255, 255), 1)
-                self.target_centre[0] = [cY, cZ, 0]
-                """
-                M = cv2.moments(i)
-                if M["m00"] != 0:
-                    cY = int(M["m10"] / M["m00"])
-                    cZ = int(M["m01"] / M["m00"])
-                    self.target_centre[0] = [cY, cZ, 0]
-                else:
-                    cY, cZ = self.target_centre[0, :2]
-                    self.target_centre[0] = [cY, cZ, 1]
-                """
+
+        contour = contours[0]
+        bestCircularity = 0
+        for c in contours:
+            if cv2.arcLength(c, True) != 0:
+                circularity = (4*np.pi*cv2.contourArea(c))/(cv2.arcLength(c, True)**2)
+            else:
+                circularity = 0
+            (cY, cZ), radius = cv2.minEnclosingCircle(c)
+            if circularity > bestCircularity and np.linalg.norm(np.array([cY, cZ]) - np.array([self.target_centre[0, 0], self.target_centre[0, 1]])) < 10:
+                bestCircularity = circularity
+                contour = c
+
+        (cY, cZ), radius = cv2.minEnclosingCircle(contour)
+        cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (255, 255, 255), 1)
+        self.target_centre[0] = [cY, cZ, 0]
+
         cv2.circle(self.cv_image1, (int(cY), int(cZ)), 1, (255, 255, 255), -1)
         return np.array([cY, cZ])
 
@@ -125,25 +115,29 @@ class image_converter:
 
         t = rospy.get_time()
 
+        self.joint1 = Float64()
+        self.joint1.data = np.pi * np.sin((np.pi / 12) * t)
         self.joint2 = Float64()
         self.joint2.data = np.pi / 2 * np.sin((np.pi / 15) * t)
         self.joint3 = Float64()
         self.joint3.data = np.pi / 2 * np.sin((np.pi / 18) * t)
         # Use pi/3 rather than pi/2 to prevent the arm knocking itself about
         self.joint4 = Float64()
-        self.joint4.data = np.pi / 3 * np.sin((np.pi / 20) * t)
+        self.joint4.data = np.pi / 4 * np.sin((np.pi / 20) * t)
 
-        # self.joint2.data = 0
-        # self.joint3.data = 0
-        # self.joint4.data = 0
+        self.joint1.data = 0
+        self.joint2.data = 0
+        self.joint3.data = 0
+        self.joint4.data = 0
 
         # Publish the results
         try:
             self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
             self.joints_pos1_pub.publish(self.js)
-            self.robot_joint2_pub.publish(self.joint2)
-            self.robot_joint3_pub.publish(self.joint3)
-            self.robot_joint4_pub.publish(self.joint4)
+            #self.robot_joint1_pub.publish(self.joint1)
+            #self.robot_joint2_pub.publish(self.joint2)
+            #self.robot_joint3_pub.publish(self.joint3)
+            #self.robot_joint4_pub.publish(self.joint4)
 
             self.target_pos1_pub.publish(self.target)
         except CvBridgeError as e:
