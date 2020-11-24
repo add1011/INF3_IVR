@@ -75,7 +75,7 @@ class image_converter:
             else:
                 circularity = 0
             (cY, cZ), radius = cv2.minEnclosingCircle(c)
-            if circularity > bestCircularity and np.linalg.norm(np.array([cY, cZ]) - np.array([self.target_centre[0, 0], self.target_centre[0, 1]])) < 10:
+            if circularity > bestCircularity:# and np.linalg.norm(np.array([cY, cZ]) - np.array([self.target_centre[0, 0], self.target_centre[0, 1]])) < 50:
                 bestCircularity = circularity
                 contour = c
 
