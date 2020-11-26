@@ -23,6 +23,8 @@ class image_converter:
         self.joints_pos2_pub = rospy.Publisher("joints_pos2", Float64MultiArray, queue_size=10)
         # initialize a publisher to send position of target to a topic called target_pos2
         self.target_pos2_pub = rospy.Publisher("target_pos2", Float64MultiArray, queue_size=10)
+        # initialize a publisher to send position of box to a topic called box_pos2
+        self.box_pos2_pub = rospy.Publisher("box_pos2", Float64MultiArray, queue_size=10)
         # initialize a subscriber to receive messages from a topic named /robot/camera2/image_raw and use callback function to receive data
         self.image_sub2 = rospy.Subscriber("/camera2/robot/image_raw", Image, self.callback2)
         # initialize the bridge between openCV and ROS
@@ -35,6 +37,7 @@ class image_converter:
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
 
         self.target_centre = np.zeros((1, 3), dtype='float64')
+        self.box_centre = np.zeros((1, 3), dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
         colourMask = cv2.inRange(self.img2HSV, (hueFloor, 80, 80), (hueCeiling, 255, 255))
@@ -72,11 +75,13 @@ class image_converter:
         bestCircularity = 0
         for c in contours:
             (cX, cZ), radius = cv2.minEnclosingCircle(c)
-            cv2.circle(self.cv_image2, (int(cX), int(cZ)), int(radius), (0, 0, 0), 1)
             circularity = (4 * np.pi * cv2.contourArea(c)) / (np.pi*radius*2) ** 2
             if circularity > bestCircularity and not (0.5 < circularity < 0.55):
                 bestCircularity = circularity
                 contour = c
+            elif 0.45 < circularity < 0.58:
+                cv2.circle(self.cv_image2, (int(cX), int(cZ)), int(radius), (0, 0, 0), 1)
+                self.box_centre[0] = [cX, cZ, 0]
 
         (cX, cZ), radius = cv2.minEnclosingCircle(contour)
         cv2.circle(self.cv_image2, (int(cX), int(cZ)), int(radius), (255, 255, 255), 1)
@@ -107,6 +112,9 @@ class image_converter:
         self.target = Float64MultiArray()
         self.target.data = self.target_centre.flatten()
 
+        self.box = Float64MultiArray()
+        self.box.data = self.box_centre.flatten()
+
         # Uncomment if you want to save the image
         # cv2.imwrite('image_copy.png', cv_image)
         im2 = cv2.imshow('window2', self.cv_image2)
@@ -117,6 +125,7 @@ class image_converter:
             self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
             self.joints_pos2_pub.publish(self.js)
             self.target_pos2_pub.publish(self.target)
+            self.box_pos2_pub.publish(self.box)
         except CvBridgeError as e:
             print(e)
 

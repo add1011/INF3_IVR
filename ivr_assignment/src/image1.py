@@ -23,6 +23,8 @@ class image_converter:
         self.joints_pos1_pub = rospy.Publisher("joints_pos1", Float64MultiArray, queue_size=10)
         # initialize a publisher to send position of target to a topic called target_pos1
         self.target_pos1_pub = rospy.Publisher("target_pos1", Float64MultiArray, queue_size=10)
+        # initialize a publisher to send position of box to a topic called box_pos1
+        self.box_pos1_pub = rospy.Publisher("box_pos1", Float64MultiArray, queue_size=10)
         # initialize a publisher to send joints' angular position to the robot
         self.robot_joint1_pub = rospy.Publisher("/robot/joint1_position_controller/command", Float64, queue_size=10)
         self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
@@ -40,6 +42,7 @@ class image_converter:
         self.joint_momentums = np.zeros((4, 2), dtype='float64')
 
         self.target_centre = np.zeros((1, 3), dtype='float64')
+        self.box_centre = np.zeros((1, 3), dtype='float64')
 
     def detectColour(self, hueFloor, hueCeiling, jointIndex):
         colourMask = cv2.inRange(self.img1HSV, (hueFloor, 80, 80), (hueCeiling, 255, 255))
@@ -77,13 +80,13 @@ class image_converter:
         bestCircularity = 0
         for c in contours:
             (cY, cZ), radius = cv2.minEnclosingCircle(c)
-            area = cv2.contourArea(c)
-            perimeter = np.pi*radius*2
-            cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (0, 0, 0), 1)
-            circularity = (4 * np.pi * area) / perimeter ** 2
+            circularity = (4 * np.pi * cv2.contourArea(c)) / (np.pi*radius*2) ** 2
             if circularity > bestCircularity and not (0.5 < circularity < 0.55):
                 bestCircularity = circularity
                 contour = c
+            elif 0.45 < circularity < 0.58:
+                cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (0, 0, 0), 1)
+                self.box_centre[0] = [cY, cZ, 0]
 
         (cY, cZ), radius = cv2.minEnclosingCircle(contour)
         cv2.circle(self.cv_image1, (int(cY), int(cZ)), int(radius), (255, 255, 255), 1)
@@ -114,6 +117,9 @@ class image_converter:
         self.target = Float64MultiArray()
         self.target.data = self.target_centre.flatten()
 
+        self.box = Float64MultiArray()
+        self.box.data = self.box_centre.flatten()
+
         # Uncomment if you want to save the image
         # cv2.imwrite('image_copy.png', cv_image)
         im1 = cv2.imshow('window1', self.cv_image1)
@@ -129,7 +135,7 @@ class image_converter:
         self.joint3.data = np.pi / 2 * np.sin((np.pi / 18) * t)
         # Use pi/3 rather than pi/2 to prevent the arm knocking itself about
         self.joint4 = Float64()
-        self.joint4.data = np.pi / 4 * np.sin((np.pi / 20) * t)
+        self.joint4.data = np.pi / 2 * np.sin((np.pi / 20) * t)
 
         self.joint1.data = 0
         self.joint2.data = 0
@@ -146,6 +152,7 @@ class image_converter:
             #self.robot_joint4_pub.publish(self.joint4)
 
             self.target_pos1_pub.publish(self.target)
+            self.box_pos1_pub.publish(self.box)
         except CvBridgeError as e:
             print(e)
 
