@@ -432,6 +432,8 @@ class image_merger:
         self.box_distance = w
         self.q_delta = q_d - np.array([joint1Angle, joint2Angle, joint3Angle, joint4Angle])
         """
+        #Alternate solution for dq0:
+        #dq0 = [(w-self.box_distance)/self.q_delta[0], (w-self.box_distance)/self.q_delta[0], (w-self.box_distance)/self.q_delta[0], (w-self.box_distance)/self.q_delta[0]]
 
         return q_d
 
