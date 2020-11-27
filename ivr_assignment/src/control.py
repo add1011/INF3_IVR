@@ -38,23 +38,22 @@ class image_merger:
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
+        # initialize angles to 0
+        self.lastJoint1Angle = 0
+        self.lastJoint2Angle = 0
+        self.lastJoint3Angle = 0
+        self.lastJoint4Angle = 0
         self.currentJoint1Angle = 0
         self.currentJoint2Angle = 0
         self.currentJoint3Angle = 0
         self.currentJoint4Angle = 0
 
-        self.previous_J_inv = np.zeros((4, 3))
-
-        # record the beginning time
-        self.time_trajectory = rospy.get_time()
         # initialize errors
         self.time_previous_step = np.array([rospy.get_time()], dtype='float64')
-        self.time_previous_step2 = np.array([rospy.get_time()], dtype='float64')
         # initialize error and derivative of error for trajectory tracking
         self.error = np.array([0.0, 0.0, 0.0], dtype='float64')
         self.error_d = np.array([0.0, 0.0, 0.0], dtype='float64')
-        self.last_w1 = 0
-        self.q_delta = np.array([0.00001, 0.00001, 0.00001, 0.00001])
+        self.last_w = 0
 
     def calcJacobian(self, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
 
@@ -117,6 +116,46 @@ class image_merger:
         return jacobian
 
     def controlClosed(self, ee, ee_d, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
+        # P gain. Large value is used since dampened Jacobian gives stability
+        K_p = np.array([[10, 0, 0], [0, 10, 0], [0, 0, 10]])
+        # D gain
+        K_d = np.array([[0.2, 0, 0], [0, 0.2, 0], [0, 0, 0.2]])
+        # estimate time step
+        cur_time = np.array([rospy.get_time()])
+        dt = cur_time - self.time_previous_step
+        # if the time difference is somehow 0, make it very small to avoid division by 0
+        if dt == 0:
+            dt = [0.001]
+        self.time_previous_step = cur_time
+        # estimate derivative of error
+        self.error_d = ((ee_d - ee) - self.error) / dt
+        # estimate error
+        self.error = ee_d - ee
+        # get the Jacobian with this joint configuration
+        J = self.calcJacobian(joint1Angle, joint2Angle, joint3Angle, joint4Angle)
+        k = 10
+        # use a dampened Jacobian instead of pseudo-inverse to help prevent singularity
+        J_damp = np.dot(J.T, np.linalg.inv(np.dot(J, J.T) + (k ** 2) * np.eye(3)))
+        # control input (angular velocity of joints)
+        dq_d = np.dot(J_damp, (np.dot(K_d, self.error_d.transpose()) + np.dot(K_p, self.error.transpose())))
+        # control input (angular position of joints)
+        q_d = np.array([joint1Angle, joint2Angle, joint3Angle, joint4Angle]).T + (dt * dq_d)
+
+        # cap the joint1 angle at pi to pi
+        if q_d[0] > np.pi:
+            q_d[0] = np.pi
+        elif q_d[0] < -np.pi:
+            q_d[0] = -np.pi
+
+        for i in range(3):
+            # cap the angle at -pi/2 to pi/2
+            if q_d[i + 1] > (np.pi / 2):
+                q_d[i + 1] = np.pi / 2
+            elif q_d[i + 1] < -(np.pi / 2):
+                q_d[i + 1] = -np.pi / 2
+        return q_d
+
+    def nullControlClosed(self, ee, ee_d, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
         # P gain
         K_p = np.array([[10, 0, 0], [0, 10, 0], [0, 0, 10]])
         # D gain
@@ -132,57 +171,57 @@ class image_merger:
         # estimate error
         self.error = ee_d - ee
         J = self.calcJacobian(joint1Angle, joint2Angle, joint3Angle, joint4Angle)
-        # calculating the psuedo inverse of the Jacobian
-        k = 10
-        # use a damped Jacobian instead of pseudo-inverse to help prevent singularity
-        J_damp = np.dot(J.T, np.linalg.inv(np.dot(J, J.T) + (k ** 2) * np.eye(3)))
-        # control input (angular velocity of joints)
-        dq_d = np.dot(J_damp, (np.dot(K_d, self.error_d.transpose()) + np.dot(K_p, self.error.transpose())))
-        # control input (angular position of joints)
-        q_d = np.array([joint1Angle, joint2Angle, joint3Angle, joint4Angle]) + (dt * dq_d)
-        return q_d
-
-    def nullControlClosed(self, ee, ee_d, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
-        # P gain
-        K_p = np.array([[0.5, 0, 0], [0, 0.5, 0], [0, 0, 0.5]])
-        # D gain
-        K_d = np.array([[0.2, 0, 0], [0, 0.2, 0], [0, 0, 0.2]])
-        # estimate time step
-        cur_time = np.array([rospy.get_time()])
-        dt = cur_time - self.time_previous_step
-        if dt == 0:
-            dt = [0.001]
-        self.time_previous_step = cur_time
-        # estimate derivative of error
-        self.error_d = ((ee_d - ee) - self.error) / dt
-        # estimate error
-        self.error = ee_d - ee
-        J = self.calcJacobian(joint1Angle, joint2Angle, joint3Angle, joint4Angle)
+        # constant to help calculate dampened Jacobian
         k = 10
         # calculating the psuedo inverse of the Jacobian
         # use a damped Jacobian instead of pseudo-inverse to help prevent singularity
-        J_damp = np.dot(J.T, np.linalg.inv(np.dot(J, J.T) + np.dot(k**2, np.eye(3))))
+        J_damp = np.dot(J.T, np.linalg.inv(np.dot(J, J.T) + k ** 2 * np.eye(3)))
         # control input (angular velocity of joints)
         dq_d = np.dot(J_damp, (np.dot(K_d, self.error_d.transpose()) + np.dot(K_p, self.error.transpose())))
 
         # TASK 4.2 #
-        #self.q_delta[self.q_delta == 0] += self.q_delta[self.q_delta == 0] + 0.00001
-        # find dq0 (box)
-        w1 = np.linalg.norm(ee - self.box_pos)
-        dq0 = ((w1 - self.last_w1)/self.q_delta)
-        k = 0.01
-        dq0 = k * dq0.T
+        # calculate delta q for each joint
+        # add a small number in order to avoid a division by zero later
+        dq1 = joint1Angle - self.lastJoint1Angle + 0.00001
+        dq2 = joint2Angle - self.lastJoint2Angle + 0.00001
+        dq3 = joint3Angle - self.lastJoint3Angle + 0.00001
+        dq4 = joint4Angle - self.lastJoint4Angle + 0.00001
 
-        # Alternate solution for dq0:
-        # dq0 = [(w-self.box_distance)/self.q_delta[0], (w-self.box_distance)/self.q_delta[0], (w-self.box_distance)/self.q_delta[0], (w-self.box_distance)/self.q_delta[0]]
+        # calculate the cost function as the distance between the target and the box
+        w = np.linalg.norm(ee - self.box_pos)
+        # calculate the derivative of the weight with respect to each joint
+        dw1 = ((w - self.last_w) / dq1)
+        dw2 = ((w - self.last_w) / dq2)
+        dw3 = ((w - self.last_w) / dq3)
+        dw4 = ((w - self.last_w) / dq4)
+        # multiply them by a constant. I have set it low.
+        k = 0.001
+        dq0 = k * np.array([dw1, dw2, dw3, dw4]).T
 
-        # add the secondary tasks to the calculated velocity
+        # multiply the secondary task by the projection of the nullity space and add it to the angular velocity
         dq_d = dq_d + np.dot((np.eye(4) - np.dot(J_damp, J)), dq0)
-        self.last_w1 = w1
+        # update 'last' values to current ones for next cycle
+        self.last_w = w
+        self.lastJoint1Angle = joint1Angle
+        self.lastJoint2Angle = joint2Angle
+        self.lastJoint3Angle = joint3Angle
+        self.lastJoint4Angle = joint4Angle
 
-        self.q_delta = dt * dq_d
-        # control input (angular position of joints)
-        q_d = np.array([joint1Angle, joint2Angle, joint3Angle, joint4Angle]) + (dt * dq_d)
+        # add the angular velocity we have decided to travel to the current joints
+        q_d = np.array([joint1Angle, joint2Angle, joint3Angle, joint4Angle]).T + (dt * dq_d)
+
+        # cap the joint1 angle at pi to pi
+        if q_d[0] > np.pi:
+            q_d[0] = np.pi
+        elif q_d[0] < -np.pi:
+            q_d[0] = -np.pi
+
+        for i in range(3):
+            # cap the angle at -pi/2 to pi/2
+            if q_d[i + 1] > (np.pi / 2):
+                q_d[i + 1] = np.pi / 2
+            elif q_d[i + 1] < -(np.pi / 2):
+                q_d[i + 1] = -np.pi / 2
 
         return q_d
 
@@ -197,10 +236,15 @@ class image_merger:
 
         ######################## CONTROL ########################
         # find the set of joint angles to make the end effector move towards the target
-        q_d = self.controlClosed(self.joints_pos,
-                                 self.target_pos,
-                                 self.currentJoint1Angle, self.currentJoint2Angle,
-                                 self.currentJoint3Angle, self.currentJoint4Angle)
+        # q_d = self.controlClosed(self.joints_pos,
+        #                         self.target_pos,
+        #                         self.currentJoint1Angle, self.currentJoint2Angle,
+        #                         self.currentJoint3Angle, self.currentJoint4Angle)
+
+        q_d = self.nullControlClosed(self.joints_pos,
+                                     self.target_pos,
+                                     self.currentJoint1Angle, self.currentJoint2Angle,
+                                     self.currentJoint3Angle, self.currentJoint4Angle)
 
         # set up the data to be published
         self.joint1 = Float64()
