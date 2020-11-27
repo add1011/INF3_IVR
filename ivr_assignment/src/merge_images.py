@@ -18,21 +18,25 @@ class image_merger:
         # initialize the node named image_processing
         rospy.init_node('image_merger', anonymous=True)
 
-        # initialize a publisher to send joints' position to a topic called joints_pos1
+        # initialize publishers to publish the estimated joint angles
         self.joint2_pub = rospy.Publisher("joint2", Float64, queue_size=10)
         self.joint3_pub = rospy.Publisher("joint3", Float64, queue_size=10)
         self.joint4_pub = rospy.Publisher("joint4", Float64, queue_size=10)
 
-
+        # initialize publishers to publish the 3D positions of the end effector, target, box and FK-predicted end effector
         self.endeffector_pub = rospy.Publisher("visionee_pos", Float64MultiArray, queue_size=10)
         self.target_pub = rospy.Publisher("target_pos", Float64MultiArray, queue_size=10)
         self.box_pub = rospy.Publisher("box_pos", Float64MultiArray, queue_size=10)
-        self.FK_pub = rospy.Publisher("FKee_pos", Float64MultiArray, queue_size=10)
+        self.FK_pub = rospy.Publisher("fkee_pos", Float64MultiArray, queue_size=10)
 
         # REDUNDANT PUBLISHERS ONLY BEING USED SINCE PLOTTING WITH ARRAYS WON'T WORK #
         self.targetx_pub = rospy.Publisher("target_xpos", Float64, queue_size=10)
         self.targety_pub = rospy.Publisher("target_ypos", Float64, queue_size=10)
         self.targetz_pub = rospy.Publisher("target_zpos", Float64, queue_size=10)
+
+        self.boxx_pub = rospy.Publisher("box_xpos", Float64, queue_size=10)
+        self.boxy_pub = rospy.Publisher("box_ypos", Float64, queue_size=10)
+        self.boxz_pub = rospy.Publisher("box_zpos", Float64, queue_size=10)
 
         self.endeffectorx_pub = rospy.Publisher("visionee_xpos", Float64, queue_size=10)
         self.endeffectory_pub = rospy.Publisher("visionee_ypos", Float64, queue_size=10)
@@ -42,35 +46,24 @@ class image_merger:
         self.FKy_pub = rospy.Publisher("fkee_ypos", Float64, queue_size=10)
         self.FKz_pub = rospy.Publisher("fkee_zpos", Float64, queue_size=10)
 
-        # initialize a publisher to send joints' angular position to the robot
-        #self.robot_joint1_pub = rospy.Publisher("/robot/joint1_position_controller/command", Float64, queue_size=10)
-        #self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
-        #self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
-        #self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
-
-        # initialize a subscriber to receive messages from a topic named target_pos1
+        # initialize a subscriber to receive the position of the target from camera1
         self.target_pos1_sub = message_filters.Subscriber("target_pos1", Float64MultiArray)
-        # initialize a subscriber to receive messages from a topic named target_pos2
+        # initialize a subscriber to receive the position of the target from camera2
         self.target_pos2_sub = message_filters.Subscriber("target_pos2", Float64MultiArray)
 
-        # initialize a subscriber to receive messages from a topic named box_pos1
+        # initialize a subscriber to receive the position of the box from camera1
         self.box_pos1_sub = message_filters.Subscriber("box_pos1", Float64MultiArray)
-        # initialize a subscriber to receive messages from a topic named box_pos2
+        # initialize a subscriber to receive the position of the box from camera2
         self.box_pos2_sub = message_filters.Subscriber("box_pos2", Float64MultiArray)
 
-        # initialize a subscriber to receive messages from a topic named joints_pos1_sub
+        # initialize a subscriber to receive the position of the joints from camera1
         self.joints_pos1_sub = message_filters.Subscriber("joints_pos1", Float64MultiArray)
-        # initialize a subscriber to receive messages from a topic named joints_pos2_sub
+        # initialize a subscriber to receive the position of the joints from camera2
         self.joints_pos2_sub = message_filters.Subscriber("joints_pos2", Float64MultiArray)
 
-        self.joint1_angle_sub = message_filters.Subscriber("/robot/joint1_position_controller/command", Float64)
-        self.joint2_angle_sub = message_filters.Subscriber("/robot/joint2_position_controller/command", Float64)
-        self.joint3_angle_sub = message_filters.Subscriber("/robot/joint3_position_controller/command", Float64)
-        self.joint4_angle_sub = message_filters.Subscriber("/robot/joint4_position_controller/command", Float64)
-
+        # synchronize the topics and use the callback function to process them
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.joints_pos1_sub, self.joints_pos2_sub, self.target_pos1_sub, self.target_pos2_sub,
-             # self.joint1_angle_sub, self.joint2_angle_sub, self.joint3_angle_sub, self.joint4_angle_sub],
              self.box_pos1_sub, self.box_pos2_sub],
             queue_size=10, slop=0.1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
@@ -78,19 +71,23 @@ class image_merger:
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
+        # save the last angle of joint2 in order to smooth the next one
         self.lastJoint2Angle = 0
 
-
+    # takes a nx3 array and merges the data from two sources into 3D coordinates. Returns a nx3 array.
     def calc3dCoords(self, source1, source2):
         coords3d = np.zeros((source1.shape[0], 3))
         for i in range(source1.shape[0]):
+            # take the x and y value from each camera
             x = source2[i, 0]
             y = source1[i, 0]
             # if camera1 can see the joint but camera2 cannot
             if source1[i, 2] == 0 and source2[i, 2] != 0:
+                # use z from camera1
                 z = source1[i, 1]
             # else if camera1 cannot see the joint but camera2 can
             elif source1[i, 2] != 0 and source2[i, 2] == 0:
+                # use z from camera2
                 z = source2[i, 1]
             # else if both cameras have the same amount of information
             else:
@@ -99,15 +96,18 @@ class image_merger:
                 x_inac = 1 - (abs(x - 400)/300)
                 y_inac = 1 - (abs(y - 400)/300)
 
+                # calculate the weight of each input according to their inaccuracies relative to each other
                 x_w = x_inac/(x_inac + y_inac)
                 y_w = 1 - x_w
 
+                # find z by adding the z from each source according to their weights
                 z = (x_w * source1[i, 1]) + (y_w * source2[i, 1])
-                # average the z from both cameras
+                # average the z from both cameras. Not used now since it's less accurate
                 #z = ((source1[i, 1] + source2[i, 1]) / 2)
             coords3d[i] = [x, y, z]
         return coords3d
 
+    # makes a given array of points relative to the yellow joint (joint1)
     def makeRelative(self, coordinates):
         relativePositions = np.zeros(coordinates.shape)
         relativePositions[:, 0] = coordinates[:, 0] - self.joints_pos_orig[0, 0]
@@ -115,9 +115,10 @@ class image_merger:
         relativePositions[:, 2] = self.joints_pos_orig[0, 2] - coordinates[:, 2]
         return relativePositions
 
-    def pixel2meter(self, joints_pos):
+    # converts a given array of points to metres from pixels
+    def pixel2meter(self, coordinates):
         # use a constant as there is no reliable way to get a ratio due to joints moving in place and being obscured
-        return joints_pos / 25.88333468967014
+        return coordinates / 25.88333468967014
 
     def calcJoint2Angle(self):
         # vary point of rotation since actual rotation is not straight
@@ -260,6 +261,7 @@ class image_merger:
 
         return joint4Angle
 
+    # return the estimated end effector position for a given set of angles using Forward Kinematics
     def forwardKinematics(self, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
         x = 3 * (np.sin(joint3Angle) * np.sin(joint1Angle + np.pi / 2) + np.cos(joint3Angle) * np.cos(
             joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2)) * np.cos(joint4Angle) + \
@@ -267,75 +269,19 @@ class image_merger:
             3 * np.sin(joint4Angle) * np.sin(joint2Angle + np.pi / 2) * np.cos(joint1Angle + np.pi / 2) + \
             7 * np.cos(joint3Angle) * np.cos(joint1Angle + np.pi / 2) * np.cos(joint2Angle + np.pi / 2) / 2
 
-        """
-        xx = 3 * (sympy.sin(joint3Angle) * sympy.sin(sympy.Add(joint1Angle, np.pi / 2)) + sympy.cos(joint3Angle) * sympy.cos(
-             sympy.Add(joint1Angle, np.pi / 2)) * sympy.cos(sympy.Add(joint2Angle, np.pi / 2))) * sympy.cos(joint4Angle) + \
-            7 * sympy.sin(joint3Angle) * sympy.sin(sympy.Add(joint1Angle, np.pi / 2)) / 2 - \
-            3 * sympy.sin(joint4Angle) * sympy.sin(sympy.Add(joint2Angle, np.pi / 2)) * sympy.cos(sympy.Add(joint1Angle, np.pi / 2)) + \
-            7 * sympy.cos(joint3Angle) * sympy.cos(sympy.Add(joint1Angle, np.pi / 2)) * sympy.cos(sympy.Add(joint2Angle, np.pi / 2)) / 2
-        """
-
-        """
-        $3(sin(\theta_3)sin(\theta_1 + \frac\pi2)cos(\theta_3)cos(\theta_1+\frac\pi2)cos(\theta_2+\frac\pi2))cos(\theta_4) +$
-
-        $\frac72sin(\theta_3)sin(\theta_1 + \frac\pi2) -$
-
-        $3sin(\theta_4)sin(\theta_2 + \frac\pi2)cos(\theta_1 + \frac\pi2) +$
-
-        $\frac72cos(\theta_3)cos(\theta_1 + \frac\pi2)cos(\theta_2 + \frac\pi2)$
-        """
-
         y = 3 * (-np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) + np.sin(joint1Angle + np.pi / 2) * np.cos(
             joint3Angle) * np.cos(joint2Angle + np.pi / 2)) * np.cos(joint4Angle) - \
             7 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) / 2 - \
             3 * np.sin(joint4Angle) * np.sin(joint1Angle + np.pi / 2) * np.sin(joint2Angle + np.pi / 2) + \
             7 * np.sin(joint1Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint2Angle + np.pi / 2) / 2
 
-        """
-        yy = 3 * (-sympy.sin(joint3Angle) * sympy.cos(sympy.Add(joint1Angle, np.pi / 2)) + sympy.sin(
-            sympy.Add(joint1Angle, np.pi / 2)) * sympy.cos(
-            joint3Angle) * sympy.cos(sympy.Add(joint2Angle, np.pi / 2))) * sympy.cos(joint4Angle) - \
-             7 * sympy.sin(joint3Angle) * sympy.cos(sympy.Add(joint1Angle, np.pi / 2)) / 2 - \
-             3 * sympy.sin(joint4Angle) * sympy.sin(sympy.Add(joint1Angle, np.pi / 2)) * sympy.sin(
-            sympy.Add(joint2Angle, np.pi / 2)) + \
-             7 * sympy.sin(sympy.Add(joint1Angle, np.pi / 2)) * sympy.cos(joint3Angle) * sympy.cos(
-            sympy.Add(joint2Angle, np.pi / 2)) / 2
-        """
-        """
-        $3(-sin(\theta_3)cos(\theta_1 +\frac\pi2)sin(\theta_1 +\frac\pi2)cos(\theta_3)cos(\theta_2 +\frac\pi2))cos(\theta_4) +$
-
-        $\frac72sin(\theta_3)cos(\theta_1 +\frac\pi2) -$
-
-        $3sin(\theta_4)sin(\theta_1 +\frac\pi2)sin(\theta_2 +\frac\pi2) +$
-
-        $\frac72sin(\theta_1 +\frac\pi2)cos(\theta_3)cos(\theta_2 +\frac\pi2)$
-        """
-
         z = 3 * np.sin(joint4Angle) * np.cos(joint2Angle + np.pi / 2) + \
             3 * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) * np.cos(joint4Angle) + \
             7 * np.sin(joint2Angle + np.pi / 2) * np.cos(joint3Angle) / 2 + \
             5 / 2
-
-        """
-        zz = 3 * sympy.sin(joint4Angle) * sympy.cos(sympy.Add(joint2Angle, np.pi / 2)) + \
-             3 * sympy.sin(sympy.Add(joint2Angle, np.pi / 2)) * sympy.cos(joint3Angle) * sympy.cos(joint4Angle) + \
-             7 * sympy.sin(sympy.Add(joint2Angle, np.pi / 2)) * sympy.cos(joint3Angle) / 2 + \
-             5 / 2
-        """
-
-        """
-        $3sin(\theta_4)cos(\theta_2+\frac\pi2) +$
-
-        $3sin(\theta_2+\frac\pi2)cos(\theta_3)cos(\theta_4) +$
-
-        $\frac72sin(\theta_2+\frac\pi2)cos(\theta_3) +$
-
-        $\frac52$
-        """
         return np.array([x, y, z])
 
     def callback(self, camera1data, camera2data, target_data1, target_data2,
-                #joint1Data, joint2Data, joint3Data, joint4Data):
                  boxdata1, boxdata2):
         # recieve the position data from each image
         try:
@@ -343,16 +289,13 @@ class image_merger:
             joints_pos2 = np.asarray(camera2data.data, dtype='float64').reshape(4, 3)
             target_pos1 = np.asarray(target_data1.data, dtype='float64').reshape(1, 3)
             target_pos2 = np.asarray(target_data2.data, dtype='float64').reshape(1, 3)
-            # joint1Actual = joint1Data.data
-            # joint2Actual = joint2Data.data
-            # joint3Actual = joint3Data.data
-            # joint4Actual = joint4Data.data
             box_pos1 = np.asarray(boxdata1.data, dtype='float64').reshape(1, 3)
             box_pos2 = np.asarray(boxdata2.data, dtype='float64').reshape(1, 3)
         except CvBridgeError as e:
             print(e)
 
         np.set_printoptions(suppress=True)
+        np.set_printoptions(precision=3)
         # merge the data into 3d position coordinates
         self.joints_pos_orig = self.calc3dCoords(joints_pos1, joints_pos2)
         # make the coordinates relative to the unmoving yellow joint
@@ -396,17 +339,21 @@ class image_merger:
         self.box_pos = self.pixel2meter(self.box_pos)
         self.box_pos = self.box_pos[0]
 
-        self.box = Float64MultiArray()
-        self.box.data = self.box_pos
+        self.box = Float64MultiArray(data=self.box_pos)
+        self.boxx = Float64(data=self.box_pos[0])
+        self.boxy = Float64(data=self.box_pos[1])
+        self.boxz = Float64(data=self.box_pos[2])
 
         # Task 3.1 #
+        # set the values of each joint, the calculated end effector position will be published
         actualJoint1 = 0
         actualJoint2 = 0
         actualJoint3 = 0
         actualJoint4 = 0
-        # calculate the position of the endEffector using joint angles from last frame
+        # calculate the position of the endEffector using joint angles
         fkee = self.forwardKinematics(actualJoint1, actualJoint2, actualJoint3, actualJoint4)
         # set up the data to be published
+        self.fkEndEffector = Float64MultiArray(data=fkee)
         self.fkEndEffectorx = Float64(data=fkee[0])
         self.fkEndEffectory = Float64(data=fkee[1])
         self.fkEndEffectorz = Float64(data=fkee[2])
@@ -424,17 +371,19 @@ class image_merger:
             self.targety_pub.publish(self.targety)
             self.targetz_pub.publish(self.targetz)
             self.box_pub.publish(self.box)
+            self.boxx_pub.publish(self.boxx)
+            self.boxy_pub.publish(self.boxy)
+            self.boxz_pub.publish(self.boxz)
             self.endeffector_pub.publish(self.endEffector)
             self.endeffectorx_pub.publish(self.endEffectorx)
             self.endeffectory_pub.publish(self.endEffectory)
             self.endeffectorz_pub.publish(self.endEffectorz)
 
             # publish Forward Kinematics prediction of end effector
+            self.FK_pub.publish(self.fkEndEffector)
             self.FKx_pub.publish(self.fkEndEffectorx)
             self.FKy_pub.publish(self.fkEndEffectory)
             self.FKz_pub.publish(self.fkEndEffectorz)
-
-
         except CvBridgeError as e:
             print(e)
         return
