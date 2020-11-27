@@ -12,7 +12,7 @@ from std_msgs.msg import Float64MultiArray, Float64
 from cv_bridge import CvBridge, CvBridgeError
 
 
-class image_merger:
+class controller:
     # Defines publisher and subscriber
     def __init__(self):
         # initialize the node named image_processing
@@ -24,13 +24,14 @@ class image_merger:
         self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
         self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
 
-        # initialize a subscriber to receive messages from a topic named target_pos1
+        # initialize a subscriber to receive the position of the target
         self.target_pos_sub = message_filters.Subscriber("target_pos", Float64MultiArray)
-        # initialize a subscriber to receive messages from a topic named box_pos1
+        # initialize a subscriber to receive the position of the box
         self.box_pos_sub = message_filters.Subscriber("box_pos", Float64MultiArray)
-        # initialize a subscriber to receive messages from a topic named joints_pos1_sub
+        # initialize a subscriber to receive the position of the end effector
         self.joints_pos_sub = message_filters.Subscriber("visionee_pos", Float64MultiArray)
 
+        # synchronize the topics and use the callback function to process them
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.joints_pos_sub, self.target_pos_sub, self.box_pos_sub],
             queue_size=10, slop=0.1, allow_headerless=True)
@@ -55,6 +56,7 @@ class image_merger:
         self.error_d = np.array([0.0, 0.0, 0.0], dtype='float64')
         self.last_w = 0
 
+    # calculate the Jacobian given an angle for each joint
     def calcJacobian(self, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
 
         x1 = (3 * np.sin(joint3Angle) * np.cos(joint1Angle + np.pi / 2) - 3 * np.sin(joint1Angle + np.pi / 2) * np.cos(
@@ -115,6 +117,7 @@ class image_merger:
 
         return jacobian
 
+    # find what to set the angles of the joints to in order to approach the target. Returns an angle for each joint.
     def controlClosed(self, ee, ee_d, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
         # P gain. Large value is used since dampened Jacobian gives stability
         K_p = np.array([[10, 0, 0], [0, 10, 0], [0, 0, 10]])
@@ -155,6 +158,8 @@ class image_merger:
                 q_d[i + 1] = -np.pi / 2
         return q_d
 
+    # use the null space of the robot to add a secondary task - avoid the box. Takes and returns the same as
+    # controlClosed()
     def nullControlClosed(self, ee, ee_d, joint1Angle, joint2Angle, joint3Angle, joint4Angle):
         # P gain
         K_p = np.array([[10, 0, 0], [0, 10, 0], [0, 0, 10]])
@@ -181,7 +186,7 @@ class image_merger:
 
         # TASK 4.2 #
         # calculate delta q for each joint
-        # add a small number in order to avoid a division by zero later
+        # add a small number in order to avoid a division by zero later. Will add a small error, but it is worth it.
         dq1 = joint1Angle - self.lastJoint1Angle + 0.00001
         dq2 = joint2Angle - self.lastJoint2Angle + 0.00001
         dq3 = joint3Angle - self.lastJoint3Angle + 0.00001
@@ -194,7 +199,7 @@ class image_merger:
         dw2 = ((w - self.last_w) / dq2)
         dw3 = ((w - self.last_w) / dq3)
         dw4 = ((w - self.last_w) / dq4)
-        # multiply them by a constant. I have set it low.
+        # multiply them by a constant. I have tuned it to this value.
         k = 0.001
         dq0 = k * np.array([dw1, dw2, dw3, dw4]).T
 
@@ -277,7 +282,7 @@ class image_merger:
 
 # call the class
 def main(args):
-    im = image_merger()
+    im = controller()
     try:
         rospy.spin()
     except KeyboardInterrupt:
